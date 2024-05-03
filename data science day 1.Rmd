@@ -1,0 +1,54 @@
+---
+title: "data_science_day1"
+output: html_document
+date: "2024-01-18"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1.4 Data Basics in RStudio
+
+```{r}
+# view(gm) allows you to view the data
+
+# head(gm) allows you to view the top six rows of the data 
+
+# glimpse(gm) gives a summary on the rows, columns, and types of variables in the dataset (as well as a "glimpse" of the types of entries in each variable)
+
+# dim(gm) gives the dimensions of the dataset in vector format [rows cols]
+
+# names(gm) gives the names of all the variables in the set
+```
+
+
+# 1.7 Codebooks
+```{r}
+# code to view codebook in rstudio, if applicable
+?dslabs::gapminder
+```
+a) infant_mortality measures infant deaths per 1000
+b) 1 per thousand 
+
+# 1.8 Examining Single Variable 
+a) using gm$fertility notation (where first is dataset, and second is the variable)
+b) class(gm$feritlity) notation to understand format/class of variable 
+c) levels(gm$continent) determines levels 
+
+## 2 R Markdown and Reproducible Research
+
+a) bullets using a star , italics using surrounding stars *hello*, section headers using # 
+b) R code appears within backticks 
+c) HTML webpage has the r code, as well as the outputs 
+
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

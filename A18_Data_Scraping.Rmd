@@ -1,0 +1,269 @@
+---
+title: "| Data Science With an Eye Towards Sustainability  \n| Activity A18: Data Scraping in R\n"
+author: "| Activity Created by Phillip Post \n Madie Tong"
+output:
+  html_document:
+    toc: true
+    toc_float:
+      toc_collapsed: true
+    toc_depth: 2
+    theme: lumen
+---
+
+# Load Required Packages
+
+```{r}
+# check if pacman has already been installed, if not, install it
+if (!"pacman" %in% installed.packages()){
+  install.packages("pacman")
+}
+# load pacman
+library(pacman)
+# use p_load from pacman to install & load as many packages as we want 
+pacman::p_load("tidyverse", "rvest")
+
+```
+
+# What is Web Scraping?
+
+`Web scraping` is the process of extracting information from a website and generally processing it into a usable format for later analysis or visualization. What you probably are unaware of is that `web scraping` is very old and a core part of how the internet works. The most famous web scraper is **Google**. Have you ever stopped to wonder why Google search works so well? Have you ever Googled something to find a part of a website rather than just navigating the website itself?
+
+```{r echo=FALSE}
+knitr::include_graphics("http://faculty.olin.edu/dshuman/DS/scraping_google_courses.png")
+```
+
+
+Google and other web search provider's business is scraping the entire internet, making sense of it, and then providing you the most relevant connections between content. In the early days of the internet, at a time when you commonly dialed up a website on your phone line, too many overly ambitious scraping bots could easily overwhelm a website or at least rack up a massive internet bill. Therefore, a core principle of the internet was born: `robots.txt`
+
+This humble text file is hosted on most websites and contains a list of parts of the website scrapers are not allowed to touch. This is non-binding, hand shake agreement that built the modern internet, but it's starting to fall apart. In the days of just web search providers, websites had the mutual benefit of accepting the cost of scraping since search engines would direct traffic to their website. Let's look at the `robots.txt` for Olin's website, thinking about a website as just folders containing a bunch of files and different directories.
+
+### Exercise 1.1: Thinking about web scraping
+
+Go to <https://www.olin.edu/robots.txt> and look through which parts of the website scrapers are not allowed to scrape. In the response chunk below, share your best guess towards these questions:
+
+-   Why do you think certain file types are blocked from scraping?
+
+-   Does anything stop web scrapers from scraping these files anyways?
+
+```{response}
+Certain file types might be blocked from scraping because they may not have information that someone on the internet may want to share/reveal. Since the robots.txt is more of courtesy and not in any way binding, there is nothing that necessarily stops a web scraper from sraping something regardless. 
+```
+
+But, Large Language Models (LLMs) break this. LLMs scrape tons of data and then produce it as their own, cutting out attribution and links to the websites that host it. We are still in the early days of how this will work out. For now, larger websites have edited their `robots.txt` to include exclusions for LLM scrapers. Let's look at an example of this.
+
+### Exercise 1.2: When is web scraping ethical?
+
+Go to <https://www.amazon.com/robots.txt> and scroll to the bottom of the page. In the response chunk below, share your best guess towards these questions:
+
+-   Which user-agents are blocked from scraping Amazon at all?
+
+-   When is it ethical or not ethical to scrape a website?
+
+```{response}
+GPT is blocked! 
+  
+  It is likely inethical to scrape a website when, perhaps, the website owner does not desire it and additionally, the web scraper is one-sidedly using resources without benefiting the website owner. 
+```
+
+It is important to note that with web scraping you are completely at the whim of the website provider. If they change their website, your code will probably break. That is why it is recommended to save a local copy of a website if you want some guaranteed stability. If you want to read more about the topics explored in this section, it was largely inspired by this article from the Verge:
+
+<https://www.theverge.com/24067997/robots-txt-ai-text-file-web-crawlers-spiders>
+
+# Using `rvest` to Scrape Websites 
+
+## Websites are just chunks of ordered code
+
+To web scrape in R, you need to have a basic understanding of how webpages present their data. You can think of web browsers as just specialized code editors that allow you to render and interact with code files hosted across the internet. These files will be in one of three coding languages natively supported by all web browsers: HTML, CSS, and Javascript. To start, let us look at the web site we will be scraping for this assignment. Open it in any browser. This is the homepage of the American Consumer Survey Index (ACSI), a group that polls Americans' satisfaction with specific companies and products.
+
+<https://theacsi.org/>
+
+You will see, well, a webpage; it is one like any other one you normally see online, but how do we see it in its raw unrendered code? Left click with your mouse or track pad and select the `inspect` option from your drop down. You should see something like this:
+
+```{r echo=FALSE}
+knitr::include_graphics("http://faculty.olin.edu/dshuman/DS/scraping_elementview.png")
+```
+
+
+That right panel shows the raw code of the website. Feel free to click around and as you select the raw code, their corresponding element on the rendered webpage should be highlighted. The goal with web scraping is to extract valuable information/data from this code into a format that we can do analysis with.
+
+Every webpage has a hierarchy where certain elements are contained within another element and so on. An element contained within another element is called a `child` and the element it is contained within is called the `parent` element. To select an element with code, we will be relying on something called `CSS selectors` which are a way of specifying an element within this hierarchy.
+
+For example, the main intro page of <https://theacsi.org/> has some text contained within a `span` which itself is contained within a `h2` (second header). Since span is the child of the second header, the CSS selector for the span would be:
+
+```         
+h2 > span
+```
+
+Note that the child sign `>` only works for elements that are directly within another. If you want to generally just find an element that comes after another element, you will just place the two elements with a space between and this tells the second element to be the descendant of the previous element.
+
+```         
+h2 span
+```
+
+A really helpful cheat sheet for CSS selectors can be found here:
+
+<https://www.w3schools.com/cssref/css_selectors.php>
+
+## Choosing and specifying the elements we want
+
+This next portion will be done assuming you are using the Chrome web browser, but it is possible to do anything in this guide (although it may not be the same process) in any other browser.
+
+We will be introducing two different methods for finding the exact CSS selector to the elements we may want to scrape. One will use just the chrome browser and the other will use the selector gadget extension that makes the process a little easier. For this part, I will demo scraping the satisfaction data of all of the major energy utilities the ACSI polls Americans on by going to <https://theacsi.org/industries/energy-utilities/#duke-energy>
+
+### Using Chrome selector gadget (user friendly)
+
+-   In Google Chrome, search for `Chrome web store`
+
+-   Search for `selector gadget`
+
+-   Install the extension to your Google Chrome
+
+To start, I look at the second table on <https://theacsi.org/industries/energy-utilities/#duke-energy> and then click the Google chrome extension tab in the top right and then click on the selector gadget option.
+
+```{r echo=FALSE}
+knitr::include_graphics("http://faculty.olin.edu/dshuman/DS/scraping_selectextension.png")
+```
+
+Next, I am going to click the `Category` column to try to select all of the company names. You will see the column highlighted by selector gadget and all of the selected values
+
+```{r echo=FALSE}
+knitr::include_graphics("http://faculty.olin.edu/dshuman/DS/scraping_overselect.png")
+```
+
+
+But wait! We have selected anything that has the column-2 class but this has also selected the above tables. `selector gadget` can remove these by clicking a second time on the Category header to tell it we only want the rows underneath.
+
+```{r echo=FALSE}
+knitr::include_graphics("http://faculty.olin.edu/dshuman/DS/scraping_finalselect.png")
+```
+
+
+Now we are also selecting the rows of the desired table in this column. This gives us the CSS selector:
+
+```         
+#tablepress-72 .column-2
+```
+
+Based on the CSS cheat sheet, we can see that we are selecting all elements that have the `column-2` class that are the descendant of the table that has the ID of `tablepress-72`.
+
+### Using inspect (works on any browser)
+
+We can also do this process by only using the inspect tool built into your browser. To do this, I will right click on the desired column of the table and click the `inspect` option.
+
+```{r echo=FALSE}
+knitr::include_graphics("http://faculty.olin.edu/dshuman/DS/scraping_inspect.png")
+```
+
+
+We can see the text that we want is being highlighted in the right pane. If we right click on this text it will give a drop down menu where you can select `Copy` and then `Copy selector`. To test how this auto generated selector works in the same pane, perform the `CTRL + F` command and then paste your selector in the search window.
+
+```{r echo=FALSE}
+knitr::include_graphics("http://faculty.olin.edu/dshuman/DS/scraping_selectionpane.png")
+```
+
+
+We can see it is only selecting `1 of 1` which is undesired since we want to capture all of the rows in the column. Let's try reducing the selector until it gives us all 30 of the rows.
+
+```{r echo=FALSE}
+knitr::include_graphics("http://faculty.olin.edu/dshuman/DS/scraping_selectprine.png")
+```
+
+
+This leaves us with
+
+```         
+#tablepress-72 td.column-2
+```
+
+You may notice this is almost exactly the same as the selector gadget option but it has one less row selected! This is because Google gave us `td.column-2` which is any cell in the second column whereas the selector gadget gave us `.column-2` which included the header. Either gives us the data but we would have to filter out the header from the selector tool.
+
+## Extracting those elements in a way R understands
+
+Now that we have our CSS selector, we have everything we need to actually scrape this data from the website.
+
+First we need to use the `read_html` function from rvest to read the code representation of the website and store it in an object.
+
+```{r}
+
+webpage <- rvest::read_html("https://theacsi.org/industries/energy-utilities/#duke-energy")
+```
+
+Now, we will use the `html_elements()` function to select our data from the webpage.
+
+```{r}
+
+companies <- rvest::html_elements(webpage, "#tablepress-72 td.column-2")
+
+head(companies)
+```
+
+You may notice that we still have the table cell HTML markers around our desired data. To extract just the text we will use `html_text()`.
+
+```{r}
+companies <- rvest::html_text(companies)
+head(companies)
+```
+
+Amazing! Now, we rinse and repeat for the next three columns.
+
+```{r}
+y2023 <- webpage %>%
+          html_elements("#tablepress-72 td.column-3") %>%
+          html_text()
+
+y2024 <- webpage %>%
+          html_elements("#tablepress-72 td.column-4") %>%
+          html_text()
+  
+percent_change <- webpage %>%     
+          html_elements("#tablepress-72 td.column-5") %>%
+          html_text()
+```
+
+Finally, store all of this data in a data frame and we are finished.
+
+```{r}
+benchmarks_by_companies <- tibble(companies = companies,y2023 = y2023,y2024 = y2024,percent_change = percent_change)
+
+benchmarks_by_companies
+```
+
+## Exercise 2: Scrape data on an energy utility
+
+Energy utilities are core to a sustainable future. Not only do they provide electricity, which is necessary for a modern society, but how they harness this energy determines whether they are aiding a clean future or contributing to climate change. Another under-appreciated aspect of energy utilities is whether or not their customers actually like them. For this exercise, each of you will be choosing a power utility and scraping their user satisfaction data. Firstly, I recommend orienting yourself with this map to what energy utility provides the power to your home.
+
+<https://atlas.eia.gov/datasets/f4cd55044b924fed9bc8b64022966097/explore?location=35.738704%2C-82.794663%2C3.95>
+
+Next, go to
+
+<https://theacsi.org/companies/>
+
+And, where it says `Sort` click the option that says `By Industry`. Scroll down the page until you find the energy utility companies. Click on the company that provides power to your community or if they are not listed then click any utility of your choice.
+
+### Exercise 2.1: Select your energy utility
+
+Enter in the response cell the link of the energy utility page you chose.
+
+```{r}
+
+link = "https://theacsi.org/industries/energy-utilities/#pge"
+```
+
+### Exercise 2.2: Scrape
+
+Scroll down to the table titled **`Customer Experience Benchmarks Year-Over-Year Trends`**. Scrape all of the columns of this data table and place them in a data frame that you print out.
+
+```{r}
+webpage <- rvest::read_html("https://theacsi.org/industries/energy-utilities/#pge") # attached webpage 
+
+benchmarks <- rvest::html_elements(webpage, "#tablepress-71 td.column-1") %>% # extract the column we want 
+  rvest::html_text() # extract solely the text from the html code line 
+
+y2023 <- rvest::html_elements(webpage, "#tablepress-71 td.column-2") %>% # extract the column we want 
+  rvest::html_text() # extract solely the text from the html code line 
+
+y2024 <- rvest::html_elements(webpage, "#tablepress-71 td.column-3") %>% # extract the column we want 
+  rvest::html_text() # extract solely the text from the html code line 
+
+benchmarks_for_pge <- tibble(benchmarks = benchmarks,y2023 = y2023,y2024 = y2024)
+```

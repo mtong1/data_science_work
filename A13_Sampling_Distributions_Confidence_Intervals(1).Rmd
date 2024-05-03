@@ -1,0 +1,657 @@
+---
+title: "Data Science With an Eye Towards Sustainability <br> A13: Sampling Distributions and Confidence Intervals"
+author: "INSERT STUDENT NAME HERE"
+output: 
+  bookdown::html_document2:
+    toc: true
+    toc_float: true
+    toc_depth: 4
+
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(ggthemes)
+library(gsheet)
+library(infer)
+library(broom)
+library(janitor)
+library(gridExtra)
+library(choroplethr)
+library(choroplethrMaps)
+library(RColorBrewer)
+library(socviz)
+library(DT)
+knitr::opts_chunk$set(tidy = FALSE, message=FALSE, warning=FALSE)
+options(htmltools.dir.version = FALSE)
+```
+
+```{r echo=FALSE}
+knitr::include_graphics("http://faculty.olin.edu/dshuman/DS/stat_flow.png")
+```
+
+# Inference: Motivating Example
+
+Thus far, our analyses have been *exploratory* in nature. Consider an example. Scientists are developing a COVID test. Doctors gave both the new test and the "gold standard" to a group of 100 patients with COVID. The new test was accurate for 88 of these patients whereas the standard test was only accurate for 86.    
+
+- **Exploratory question**    
+    What trends did we observe in our sample of data? Was the new test more accurate than the old in detecting COVID among the 100 patients?    
+    
+- **Inferential question**    
+    Do these data provide enough evidence to conclude that the new test is better at detecting COVID?    
+    
+The point: we'll start looking beyond just the trends in our sample data and exploring how to **use sample data to make inferences about the larger population of interest**. The first step in reaching this goal is understanding sampling distributions, a reflection of the potential error in our sample information.
+
+
+\
+
+# Data Context
+
+As part of the [Justice40 Initiative](https://www.govinfo.gov/content/pkg/FR-2021-02-01/pdf/2021-02177.pdf), the Council on Environmental Quality (CEQ) recently launched the
+[Climate and Economic Justice Screening Tool (CEJST)](https://screeningtool.geoplatform.gov/en/methodology#3/33.47/-97.5). It pulls data from myriad sources, including the US Census, the Departments of Energy, Transportation, and Housing and Urban Development, the Center for Disease Control, and the Environmental Protection Agency's [Environmental Justice Screening Tool (EJScreen)](https://www.epa.gov/ejscreen). By looking at data on communities (census tracts or smaller block group levels), the tools helps identify indicators of burdens in eight categories: climate change, energy, health, housing, legacy pollution, transportation, water and wastewater, and workforce development. Aligned with the same broader mission, the [County Health Rankings & Roadmaps](https://www.countyhealthrankings.org/) is a program of the University of Wisconsin Population Health Institute that collates data on health equity at the county level. In this activity, we'll examine relationships at the county level between racial composition and food insecurity, data for the latter of which is incorporated from the Map the Meal Gap study from [Feeding America](https://map.feedingamerica.org/).
+
+
+
+```{r,echo=FALSE}
+county_health<-read_csv("http://faculty.olin.edu/dshuman/DS/county_health_2023.csv")%>%
+  janitor::clean_names()%>%
+  filter(!is.na(county))
+```
+
+
+Here are choropleths of our two variables of interest -- `percent_non_hispanic_white` and `percent_food_insecure` -- on 3142 US counties (data is missing for one county):  
+\
+
+```{r,fig.width=8,echo=FALSE}
+mapping_data <- county_health %>% 
+  rename(id = fips) %>%
+  left_join(county_map)
+
+ggplot(mapping_data, aes(x = long, y = lat, fill = percent_non_hispanic_white, group = group)) + 
+  coord_equal() + 
+  geom_polygon(color = NA)+
+  theme_map()+
+  labs(title="Percent of Population That Is Non-Hispanic White by County",fill=element_blank())
+```
+
+\
+
+```{r,fig.width=8,echo=FALSE}
+ggplot(mapping_data, aes(x = long, y = lat, fill = percent_food_insecure, group = group)) + 
+  coord_equal() + 
+  geom_polygon(color = NA)+
+  theme_map()+
+  labs(title="Percent of Population That Is Food Insecure, by County",fill=element_blank())
+```
+
+Next, let's visualize the relationship between these two variables and build a linear regression model of `percent_food_insecure` with `percent_non_hispanic_white` as the lone explanatory variable:
+
+```{r,echo=FALSE}
+ggplot(county_health,aes(x=percent_non_hispanic_white,y=percent_food_insecure))+
+  geom_point(alpha=.05)+
+  geom_smooth(method="lm",se=FALSE)
+```
+
+```{r}
+mod1<-lm(data=county_health,formula=percent_food_insecure~1+percent_non_hispanic_white)
+mod1$coefficients
+```
+
+So the model line is given by
+$$\text{percent_food_insecure} = 16.805 - 0.0576 * \text{percent_non_hispanic_white}.$$
+
+\
+
+# Sampling Distributions
+
+**FORGET THAT YOU KNOW ALL OF THE ABOVE.**    
+
+Let's **pretend** that we're working within the typical scenario - we don't have access to the entire population of interest. Instead, we need to **estimate** population relationship using data from a randomly selected **sample** of counties.
+
+## Sampling and randomness in RStudio    
+
+We'll be taking some *random samples* of counties throughout this activity. The underlying *random number generator* plays a role in the random sample we happen to get:    
+
+```{r}
+# Try the following chunk A FEW TIMES
+sample_n(county_health, size = 2, replace = FALSE)
+```
+
+```{r}
+# Try the following FULL chunk A FEW TIMES
+set.seed(38)
+sample_n(county_health, size = 2, replace = FALSE)
+```
+    
+**NOTE:**  If we `set.seed(some positive integer)` before taking a random sample, we'll get the same results.  This **reproducibility** is important:    
+    
+- we get the same results every time we knit the Rmd    
+- we can share our work with others and ensure they get our same answers    
+- it would not be great if you submitted your work to, say, a journal, and weren't able to back up / confirm / reproduce your results!    
+
+## Class experiment: Different samples, different estimates
+
+Using a class experiment, we will now explore the degree to which the sample data we happen to collect can impact our estimates and conclusions.
+
+
+```{exercise,name="Construct your sample"}
+Let's each take a sample and see what we get. Let your seed be your birthday month (1 or 2 digits) and day (2 digits). For example January 5 is 105, September 10 is 910, October 5 is 1005, and December 10 is 1210. Set this in RStudio (and change it to `eval=TRUE`):
+
+```
+
+```{r eval = FALSE}
+set.seed(YOURSEED)
+```
+    
+Take a random sample of **10** counties:    
+
+```{r}
+my_sample <- sample_n(county_health, size = 10, replace = FALSE)
+my_sample
+```
+    
+Use your sample to construct and plot a sample model. How close is your sample **estimate** to the actual population model (`percent_food_insecure = 16.805 - 0.0576 * percent_non_hispanic_white`)?
+
+
+
+```{exercise,name="Report your results"}   
+Indicate your sample intercept and slope *estimates* in [this survey](https://docs.google.com/forms/d/e/1FAIpQLScP3QKhzQxRonQpJCAATsLou33itVsnQ3kBvs_YeN8XSkjE7A/viewform?usp=sf_link).   
+
+```
+
+```{exercise,name="Repeat experiment"}
+Choose another random seed and generate a new random sample of 10 counties. Repeat this experiment, and fill out the Google form again.
+
+```
+
+**Compare estimates**
+
+Now let's import each student's estimates from Google sheets:    
+
+```{r}
+results <- gsheet2tbl('https://docs.google.com/spreadsheets/d/1teGGCtilEH3AL4t-7CA0w3tvpIJMzg_bI0wF0xzKTOs/edit?usp=sharing')
+```
+    
+We'll first compare the intercepts to each other and to the _true_ population intercept in red:
+
+```{r}
+ggplot(results, aes(x = intercept)) + 
+  geom_histogram(color = "white") + 
+  geom_vline(xintercept = 16.805, color = "red")
+```
+
+And then compare the slopes to each other and to the _true_ population slope in red:
+
+```{r}
+ggplot(results, aes(x = slope)) + 
+  geom_histogram(color = "white") + 
+  geom_vline(xintercept = -.0576, color = "red")
+```
+
+Finally, here is a comparison of the resulting models to the *true* population model in red:
+
+```{r}
+ggplot(county_health, aes(x = percent_non_hispanic_white, y = percent_food_insecure)) +
+  geom_abline(data = results, aes(intercept = intercept, slope = slope), color = "gray") + 
+  geom_smooth(method = "lm", color = "red", se = FALSE)
+```
+
+
+## Simulation study
+
+Our little experiment reflects very few of the more than $_{3142}C_{10} > 2.5*10^{28}$ different samples of 10 counties that we could get from the entire population of 3142 counties!!  In this section, you'll run a *simulation* to study just how different these estimates could be.    
+
+Whereas `sample_n()` takes a single sample of size $n$ from a dataset, `rep_sample_n()` takes *multiple* samples of size $n$. To get a feel for it, take **4** samples of size **2**.  The `replicate` variable in the output indicates the sample (1, 2, 3, 4) to which each sampled case corresponds.        
+
+```{r}
+example_1 <- rep_sample_n(county_health, size = 2, reps = 4, replace = FALSE)
+dim(example_1)
+example_1
+```
+
+
+
+```{exercise,name="500 samples of size 10"}
+a. To get a sense for the wide variety of samples we might get, take **500** samples of size $n$ = **10**.  Store these as `samples_10`.   
+b. Each sample produces a different estimate of the population model between `percent_food_insecure` and `percent_non_hispanic_white`. Use the following code to plot these **500** sample model estimates on the same frame. (Note the new `group` term!)    
+
+```
+
+```{r,eval=FALSE}    
+ggplot(samples_10, aes(x = percent_non_hispanic_white, y = percent_food_insecure, group = replicate)) + 
+    geom_smooth(method = "lm", se = FALSE, size = 0.5, color = "gray") 
+``` 
+
+c. Let's focus on the slopes of these 500 sample models. Use the following code to save the 500 `percent_non_hispanic_white` (slope) coefficients, stored under the `estimate` variable in the `slopes_10` data frame. (Notice the new `do()` verb!)
+
+```{r,eval=FALSE}
+slopes_10 <- samples_10 %>%    
+    group_by(replicate) %>%     
+    do(tidy(lm(percent_food_insecure ~ percent_non_hispanic_white, data = .))) %>% 
+    filter(term == "percent_non_hispanic_white")
+``` 
+
+
+d. Construct a histogram of the 500 sample estimates of the true slope. This histogram approximates a **sampling distribution** of the sample slopes. Set your x-axis limits to [-0.2,0.2]. Add a vertical red line at x=-0.0576, the slope of the population model we computed above.   
+
+e. Describe the sampling distribution: What's its general shape?  Where is it centered?  Roughly what is its spread? i.e., what is the range of estimates you observed?  
+
+
+
+```{exercise,name="Increasing sample size"}
+Suppose we increased our sample size from `n = 10` to `n = 50`.  What impact do you anticipate this having on the sampling distribution of sample slopes:          
+
+- Around what value would you expect the distribution of sample slopes to be centered?    
+- What general shape would you expect the distribution to have?    
+- In comparison to estimates based on the samples of size 10, do you think the estimates based on samples of size 50 will be closer to or farther from the true slope (on average)?  Why?    
+
+```
+
+
+```{exercise,name="Test your intuition"}
+a. Repeat this entire simulation process with 500 samples of size n=50. Use set.seed(38) and the same naming conventions as above (e.g., `samples_50` and `slopes_50`. Plot all 500 model lines on the same graph, extract the 500 slopes, and then generate a histogram of the resulting slope coefficients.    
+b. Repeat part (a) with 500 samples of n=200.
+
+```
+
+
+
+
+
+
+```{exercise, name="Impact of the sample size: pictures"}
+Compare the sampling distributions of the sample slopes for the estimates based on sizes 10, 50, and 200 by plotting them on the same frame, using the following code:    
+
+```
+
+```{r eval = FALSE}
+# Combine the estimates & sample size into a new data set
+simulation_data <- data.frame(
+  estimates = c(slopes_10$estimate, slopes_50$estimate, slopes_200$estimate), 
+  sample_size = rep(c("10", "50", "200"), each = 500))
+
+# Construct density plot
+ggplot(simulation_data, aes(x = estimates, color = sample_size)) + 
+  geom_density() + 
+  labs(title = "SAMPLING Distributions")
+```    
+
+
+```{exercise, name="Impact of the sample size: properties of the sampling distribution"}
+a. From the `simulation_data`, calculate the **mean** and **standard deviation** in sample slopes calculated from samples of size 10, 50, and 200. HINT: `group_by()`.
+b. Compare the means.
+c. Compare and interpret the standard deviations. **NOTE:** We call the standard deviation **"standard error"** here -- it indicates the typical distance of a sample estimate from the actual population value.
+
+```
+
+```{exercise, name="Properties of sampling distributions"}
+In light of your these investigations, complete the following statements.   
+
+a. For all sample sizes, the shape of the sampling distribution is ???.    
+b. As sample size increases:    
+    The average sample slope estimate INCREASES / DECREASES / IS FAIRLY STABLE.    
+    The standard deviation of the sample slopes INCREASES / DECREASES / IS FAIRLY STABLE.    
+c. Thus, as sample size increases, our sample slopes become MORE RELIABLE / LESS RELIABLE. 
+
+```
+
+
+## Summary of sampling distributions
+
+Consider a simple population model
+
+$$y = \beta_0 + \beta_1 x.$$    
+
+In general, we don't know $\beta_0$ or $\beta_1$.  We are either working with ($x,y$) data on a *sample* of subjects from the broader population of interest or with a population that is in flux. Thus, our sample data give us an **estimate** of the population model:
+
+$$y = \hat{\beta}_0 + \hat{\beta}_1 x$$    
+
+**What we know about the sample model**:    
+
+- Our estimates $\hat{\beta}_0$ and $\hat{\beta}_1$ will vary depending upon what data we happen to get
+- The sample provides an *estimate* of the true model 
+- There is **error** in this estimate    
+- We need a sense of the potential **error** in order to...
+    - use our sample to make *inferences* about the broader population    
+    - ethically and rigorously communicate the potential limitations of our work
+
+
+These concepts are captured in the **sampling distribution** of a sample estimate $\hat{\beta}$ (eg: $\hat{\beta}_0$ or $\hat{\beta_1}$).  Specifically, the sampling distribution of $\hat{\beta}$ is a distribution of all possible $\hat{\beta}$ we could observe based on all possible samples of the same size $n$ from the population. It captures how $\hat{\beta}$ can vary from sample to sample.    
+
+```{r,echo=FALSE,out.width=500}
+knitr::include_graphics("http://faculty.olin.edu/dshuman/DS/samp_dist_map.png")
+```
+
+**Interpretation warning**   
+
+Note the differences between 
+     
+i) the population distribution
+ii) the distribution of individual cases in a single sample (should be reflective of the population distribution for a large enough sample)    
+iii) the sampling distribution, which reflects how sample statistics (e.g., the mean, a regression coefficient) vary from sample to sample (not from individual case to individual case)
+
+
+**Impact of sample size on a sampling distribution**    
+As the sample size n increases:  
+
+- there is less variability (and more consistency) in the possible estimates from different samples 
+- we are less likely to get estimates that are far from the truth    
+
+Below are sampling distributions of the sample slopes and sample models calculated from sample sizes of 10, 50, and 200 counties.
+
+```{r echo = FALSE, fig.width=8, fig.height=5,cache=TRUE}
+set.seed(38)
+samples_10 <- rep_sample_n(county_health, size = 10, reps = 500, replace = FALSE)
+slopes_10 <- samples_10 %>%    
+            group_by(replicate) %>%     
+            do(lm(percent_food_insecure~ 1+percent_non_hispanic_white, data=.) %>% tidy()) %>% 
+            filter(term == "percent_non_hispanic_white")
+
+set.seed(38)
+samples_50 <- rep_sample_n(county_health, size = 50, reps = 500, replace = FALSE)
+slopes_50 <- samples_50 %>%    
+            group_by(replicate) %>%     
+            do(lm(percent_food_insecure~ 1+percent_non_hispanic_white, data=.) %>% tidy()) %>% 
+            filter(term == "percent_non_hispanic_white")
+
+set.seed(38)
+samples_200 <- rep_sample_n(county_health, size = 200, reps = 500, replace = FALSE)
+slopes_200 <- samples_200 %>%    
+            group_by(replicate) %>%     
+            do(lm(percent_food_insecure~ 1+percent_non_hispanic_white, data=.) %>% tidy()) %>% 
+            filter(term == "percent_non_hispanic_white")
+g1 <- ggplot(slopes_10, aes(x = estimate)) + 
+    geom_histogram(color = "white", binwidth = 0.01) + 
+    lims(x = c(-0.20, 0.2)) + 
+    labs(title = "n=10")
+g4 <- ggplot(samples_10, aes(x = percent_non_hispanic_white, y = percent_food_insecure, group = replicate)) + 
+    geom_smooth(method = "lm", se = FALSE, size = 0.5)  +
+    geom_abline(intercept = 16.80546419, slope = -0.05761333, color = "red", size = 1) +
+    labs(title = "n=10")+
+  lims(y=c(0,30))
+
+g2 <- ggplot(slopes_50, aes(x = estimate)) + 
+    geom_histogram(color = "white", binwidth = 0.01) + 
+    lims(x = c(-0.20, 0.2)) + 
+    labs(title = "n=50")
+g5 <- ggplot(samples_50, aes(x = percent_non_hispanic_white, y = percent_food_insecure, group = replicate)) + 
+    geom_smooth(method = "lm", se = FALSE, size = 0.5)  + 
+    geom_abline(intercept = 16.80546419, slope = -0.05761333, color = "red", size = 1) +
+    labs(title = "n=50")+
+  lims(y=c(0,30))
+
+
+g3 <- ggplot(slopes_200, aes(x = estimate)) + 
+    geom_histogram(color = "white", binwidth = 0.01) + 
+    lims(x = c(-0.20, 0.2)) + 
+    labs(title = "n=200")
+g6 <- ggplot(samples_200, aes(x = percent_non_hispanic_white, y = percent_food_insecure, group = replicate)) + 
+    geom_smooth(method = "lm", se = FALSE, size = 0.5)  + 
+    geom_abline(intercept = 16.80546419, slope = -0.05761333, color = "red", size = 1) +
+    labs(title = "n=200")+
+  lims(y=c(0,30))
+
+grid.arrange(g1,g2,g3,g4,g5,g6,ncol=3)
+```
+
+
+**Standard error of $\hat{\beta}$**    
+
+The standard deviation of the sampling distribution, which is called the **standard error**, measures the typical error in the sample slopes calculated from sample to sample. The greater the standard error, the less "reliable" the sample estimate. In linear algebraic notation, we can calculate standard errors as follows:
+
+$$\begin{array}{ll}
+\text{population model}: & y = X \beta + \varepsilon \;\; \text{ where } \;\; \varepsilon \sim N(0, \sigma^2) \\
+\text{sample estimate of $\beta$}: & \hat{\beta} = \left(X^TX\right)^{-1}X^Ty \\
+\text{standard error of $\hat{\beta}$}: & s.e.\left(\hat{\beta}\right) = \sqrt{\sigma^2\left(X^TX\right)^{-1}} \propto \frac{\sigma}{\sqrt{n}} \\
+\end{array},$$
+
+where $\sigma^2$ is the variance of the residuals. When the linear regression model assumptions are met, the standard error $\hat{\beta}$ is proportional to $\frac{1}{\sqrt{n}}$ where $n$ is the sample size. Thus  standard error decreases as sample size $n$ increases.
+
+
+## Approximating Sampling Distributions
+
+The simulation above was just pretend. In *theory*, the sampling distribution would provide a sense of the potential **error.**  But in practice, we can't actually observe the sampling distribution: we take only one sample from the population, *not*, say, 500 or all possible samples from the population! Thus, we can't actually observe the sampling distribution. 
+
+An *approximation* of the potential **error** in our sample estimates is the best we can do!  There are two main approaches to this approximation:    
+
+- Central Limit Theorem    
+    Approximates the sampling distribution and standard error by assuming it follows a specific *probability model*.     
+    
+    
+- Bootstrapping    
+    Does *not* make any probability model assumptions.  Approximates the standard error and features of the sampling distribution by resampling the sample.    
+    
+
+### Central Limit Theorem
+
+**IF** the regression model assumptions are met and our sample size $n$ is "big enough", then the **Central Limit Theorem (CLT)** guarantees that the sampling distribution of *all* possible $\hat{\beta}_i$ we could observe from *all* possible samples of size $n$ is approximately normally distributed around $\beta_i$ with standard error $s.e.(\hat{\beta}_i)$.
+
+$$\hat{\beta}_i \stackrel{\cdot}{\sim} N(\beta_i, s.e.(\hat{\beta}_i)).$$
+
+This statement assumes we knew the actual population value $\beta_i$ and the actual standard error of the regression coefficient; in practice, *we do not know* either.
+
+Connecting this to the 68-95-99.7 Rule, the CLT guarantees that (approximately)...
+
+- **68%** of samples will produce $\hat{\beta}_i$ within **1 st. err.** of $\beta_i$    
+
+- **95%** of samples will produce $\hat{\beta}_i$ within **2 st. err.** of $\beta_i$
+
+- **99.7%** of samples will produce $\hat{\beta}_i$ within **3 st. err.** of $\beta_i$
+
+
+
+\
+
+
+```{r echo = FALSE, fig.width = 8, fig.height = 3, fig.align = "center"}
+library(ggplot2)
+g <- ggplot(data.frame(x=c(-4,4)),aes(x)) +
+    stat_function(fun = dnorm) + 
+    geom_segment(aes(x = 0, xend = 0, y = 0, yend = dnorm(0)), linetype = 2) + 
+    theme(axis.ticks = element_blank(),
+          axis.text = element_blank()) + 
+    labs(y="", x=expression(beta[i]))
+d <- ggplot_build(g)$data[[1]]
+
+g1 <- g + 
+    geom_area(data = subset(d, x > -1 & x < 1), aes(x=x, y=y), fill="red", alpha = 0.6) + 
+    labs(title = "68% of estimates")
+g2 <- g + 
+    geom_area(data = subset(d, x > -2 & x < 2), aes(x=x, y=y), fill="red", alpha = 0.6) + 
+    labs(title = "95% of estimates")
+g3 <- g + 
+    geom_area(data = subset(d, x > -3 & x < 3), aes(x=x, y=y), fill="red", alpha = 0.6) + 
+    labs(title = "99.7% of estimates")
+grid.arrange(g1,g2,g3,ncol=3)
+    
+```
+
+Aside: See this [video](https://www.youtube.com/watch?v=jvoxEYmQHNM) for the CLT explained using bunnies.
+
+\
+
+```{example,name="Approximating the sampling distribution of a regression coefficient"}
+Assume we have a single sample of size n=50 from the population of counties:
+
+```
+
+```{r,fig.width=5}
+set.seed(1)    
+one_sample_50 <- sample_n(county_health, size = 50, replace = FALSE)
+
+# Estimate the model
+one_sample_model <- lm(percent_food_insecure ~ 1+percent_non_hispanic_white, one_sample_50)
+summary(one_sample_model)$coefficients
+
+# Plot the model estimate
+ggplot(one_sample_50, aes(x = percent_non_hispanic_white, y = percent_food_insecure)) + 
+    geom_point() + 
+    geom_smooth(method = "lm", se = FALSE)
+```
+
+In our crystal ball simulation study of 500 samples (Exercise 2.8) from the population, we calculated the standard error of $\hat{\beta}_1$ to be around 0.0278. In reality, we can *estimate* this standard error using only our `one_sample_50` data and a complicated formula $c / \sqrt{n} = c / \sqrt{50}.$ The estimated `Std. Error` for $\hat{\beta}_1$ shown in the `one_sample_model` summary table is 0.0249. Based on `one_sample_50` alone, the CLT states that the distribution of $\hat{\beta}_1$ is approximately normal:
+$$\hat{\beta}_1 \stackrel{\cdot}{\sim} N\left(\beta_1, 0.0249^2\right),$$ where 0.0249 was the standard error estimate reported in the model summary table.  In pictures:        
+```{r fig.width=6, fig.height=3, echo=FALSE, fig.align="center"}
+ggplot(data.frame(x = c(-4, 4)), aes(x)) + 
+stat_function(fun = dnorm) + 
+labs(y = "density", x = expression(paste("possible ", hat(beta)[1]))) + 
+scale_x_continuous(breaks = -3:3, labels = 
+c(expression(paste(beta[1],"-0.0748")), 
+expression(paste(beta[1],"-0.0499")),
+expression(paste(beta[1],"-0.0249")),
+expression(beta[1]),
+expression(paste(beta[1],"+0.0249")),
+expression(paste(beta[1],"+0.0499")),
+expression(paste(beta[1],"+0.0748"))))
+```    
+        
+```{exercise,name="CLT and the 68-95-99.7 rule"}    
+Use the CLT assumption to answer the following questions.  For approximately what % of samples will $\hat{\beta}_1$ be...
+    
+a. too big: bigger than $\beta_1$    
+b. lucky: within 2 standard errors (0.0499) of $\beta_1$    
+c. unlucky: more than 2 standard errors (0.0499) from $\beta_1$    
+d. really unlucky: more than 3 standard errors (0.0748) from $\beta_1$  
+
+```
+    
+
+
+
+
+
+**Technical note**: Typically, we need to estimate the standard error from our *sample* via some complicated formula $c / \sqrt{n}$. It turns out that when we use this estimation, the distribution does not actually follow the normal distribution, but the [Student's t-distribution](https://en.wikipedia.org/wiki/Student%27s_t-distribution), which is similar to the normal with fatter tails.
+
+
+### Bootstrapping
+
+We won't discuss bootstrapping in detail, but here is the main idea. 
+
+Starting with our sample of size $n$:    
+
+1. Take many (e.g., 1000) **RE**samples of size $n$ WITH REPLACEMENT from the sample.  Some cases might appear multiple times, some not at all. This is analogous to seeing several similar cases in a sample from the population.    
+
+2. Calculate $\hat{\beta}$ using each sample.  This gives 1000 estimates: $$\hat{\beta}^{(1)}, ..., \hat{\beta}^{(1000)}$$  The distribution of these is our **bootstrap distribution**.  The shape and spread of this distribution (though not the location) will mimic that of the sampling distribution.            
+
+3. Use the bootstrap distribution to construct confidence intervals and hypothesis tests for $\beta$ WITHOUT assuming any theory about the distribution, shape, spread of the sampling distribution.    
+
+In pictures:
+
+```{r,echo=FALSE,out.width=500}
+knitr::include_graphics("http://faculty.olin.edu/dshuman/DS/boot_map.png")
+```
+
+or from Fig. 5.4 of *Statistical Modeling* by Daniel Kaplan:
+
+```{r,echo=FALSE,out.width=500}
+knitr::include_graphics("http://faculty.olin.edu/dshuman/DS/bootstrap_fig.jpg")
+```
+
+If interested, you can read more about bootstrapping in [Modern Data Science with R](https://mdsr-book.github.io/mdsr2e/ch-foundations.html#sec:boot) or [Statistical Modeling](https://dtkaplan.github.io/SM2-bookdown/confidence-intervals.html#the-resampling-distribution-bootstrapping).
+
+\
+
+# Confidence Intervals
+
+**Never trust a sample estimate / regression coefficient that's reported without a measure of potential error!** When interpreting and reporting sample estimates (means, model coefficients, model predictions, etc), it is crucial to incorporate the potential error in these estimates. This is commonly done using **confidence intervals**.
+
+The confidence interval for some population quantity of interest $b$ (eg: a model coefficient, a mean, etc)...    
+- reflects potential error in the sample estimate of $b$    
+- provides a *range* of plausible values for $b$    
+- can be constructed by 
+ $$\text{estimate} \pm \text{margin of error} = \text{estimate} ± c * \text{standard error of estimate}$$    
+ 
+ Conf. level      c         Conf Interval                   Picture
+ --------------- --- ----------------------------------- -------------
+ 68%              1   estimate $\pm$ 1 standard error        --*--
+ 95%              2   estimate $\pm$ 2 standard errors     -- --*-- --
+ 99.7%            3   estimate $\pm$ 3 standard errors   -- -- --*-- -- --
+
+In `R`, we can compute confidence intervals as follows: `confint(model_object, level = 0.99)`, where you can change the level to any number you'd like.
+
+\
+
+## Example: CIs for `percent_food_insecure` vs. `percent_non_hispanic_white` ($n=100$)
+
+In each facet below, we perform 100 repetitions of sampling n=100 counties from `county_health`, use those samples to construct the model `percent_food_insecure ~ 1 + percent_non_hispanic_white`, approximate the standard error of the sampling distribution, and plot the corresponding confidence intervals:
+
+```{r echo=FALSE, fig.width=10, fig.align="center", warning=FALSE, message=FALSE}
+CI_sim <- function(level, n) {    
+    # take 100 samples of size n
+    samples <- rep_sample_n(county_health, size = n, reps = 100, replace = FALSE)
+    
+    # confidence intervals from each sample
+    CIs <- samples %>%    
+        group_by(replicate) %>%     
+        do(tidy(lm(percent_food_insecure ~  1+ percent_non_hispanic_white, data=.),conf.int=TRUE,conf.level=level))  %>% 
+        filter(term == "percent_non_hispanic_white")%>%
+      select(replicate,conf.low,conf.high)
+    
+    names(CIs) <- c("replicate", "lower", "upper")
+    
+    CIs %>% 
+        mutate(lucky = (lower < -0.05761333 & upper > -0.05761333), estimate = (upper + lower) / 2)
+}
+
+set.seed(2000)
+dat <- rbind(CI_sim(level = 0.68, n = 100), CI_sim(level = 0.95, n = 100), CI_sim(level = 0.997, n = 100))
+dat$level <- rep(c("68%", "95%", "99.7%"), each = 100)
+ggplot(dat, aes(y = replicate, x = lower)) + 
+    geom_segment(aes(x = lower, xend = upper, y = replicate, yend = replicate)) + 
+    geom_point(aes(x = estimate, y = replicate)) + 
+    facet_wrap(~ level) + 
+    labs(x = "Slope", y = "Replicate")
+```
+We can redo the same plot, coloring each confidence interval by whether it was "lucky" to include the model coefficient (slope) for the model computed on the entire population of 3142 counties:
+
+```{r echo=FALSE, fig.width=10, fig.align="center", warning=FALSE, message=FALSE}
+ggplot(dat, aes(y = replicate, x = lower, color = lucky)) + 
+    geom_segment(aes(x = lower, xend = upper, y = replicate, yend = replicate)) + 
+    geom_point(aes(x = estimate, y = replicate)) + 
+    geom_vline(xintercept = -0.05761333) + 
+    facet_wrap(~ level) + 
+    labs(x = "Slope", y = "Replicate")
+```
+We see that a higher confidence level leads to wider CIs and more CIs that cover the population model coefficient.
+
+## Interpreting a (95%) confidence interval
+
+- The "rough" but accepted way:    
+    We are "95% confident" that the true population value is between the lower and upper bounds of this CI.
+- The longer, technically correct way:    
+    Using this CI method, approximately 95% of all possible samples will produce 95% CI's that cover the true value. The other 5% are based on unlucky samples that produce unusually low or high estimates.
+- The INCORRECT way:    
+    We cannot say, "There's a 95% chance that the true population value is in the 95% CI." Technically, the population value is either in the interval or not, so the probability is simply 1 or 0.
+
+- The 95% describes a quality of the **procedure** rather than the specific interval we obtained
+- Confidence intervals are about the precision of an estimate, not about individual cases
+
+## Practice
+
+```{exercise}
+Let's take a random sample of 200 counties and use it build a model of `percent_food_insecure ~ 1 + percent_non_hispanic_white + percent_rural`
+
+```
+
+```{r}
+set.seed(1000)
+samp200<-sample_n(county_health, size = 200, replace = FALSE)
+mod2<-lm(data=samp200,formula=percent_food_insecure ~ 1 + percent_non_hispanic_white + percent_rural)
+coef(summary(mod2))
+```
+
+a. Interpret the coefficient of `percent_non_hispanic_white` (-0.0855). Don't forget to control for `percent_rural` in your interpretation.
+
+b. In the model summary - `summary(mod2)` - `R` reports the standard error for each coefficient. In particular, you'll find the standard error of the `percent_non_hispanic_white` coefficient is reported to be 0.011265 (make sure that you see where this number is coming from in the `R` output). Use this standard error to compute and interpret an approximate 95% CI for the true model coefficient (on the whole population).
+c. Use `R`'s built-in `confint` command to compute a 95% CI on this coefficient. How does it compare to the one you computed above? Are they the same? Are they close? (“Yes” or “No” for each question will suffice.)
+d. We'd like to know if this CI provides any evidence for a relationship between `percent_non_hispanic_white` and `percent_food_insecure`, when controlling for `percent_rural`. What would the `percent_non_hispanic_white` coefficient of `mod2` be if there were truly NO significant relationship between `percent_non_hispanic_white` and `percent_food_insecure`, when controlling for `percent_rural`?   
+e. If the `percent_non_hispanic_white` coefficient for the model on the entire population was actually equal to 0, how likely are we to have seen a coefficient of -0.0855 in our sample of 200 counties? This value would be 7.591 standard errors below the actual value of 0 (re-examine the t-value in the `mod2` summary table above to understand how it is computed). The probability of a choosing a sample of 200 counties that led to a sample model coefficient 7.591 standard errors or more from the population model coefficient is given in the final column of that summary table. [There isn't anything to answer for this question; just make sure you are comfortable with that logic.] 
+
+```{exercise}
+Let's think about the confidence interval procedure more generally.   
+   
+a. Is a 99% confidence interval wider or narrower than a 95% confidence interval?    
+b. What are the bounds for a 100% confidence interval?    
+c. The higher the confidence level, the better! Do you agree? Why or why not?    
+
+```

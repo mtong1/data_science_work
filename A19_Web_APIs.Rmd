@@ -1,0 +1,382 @@
+---
+title: "| Data Science With an Eye Towards Sustainability    \n| Activity A19: Public Web APIs\n"
+author: "Madie Tong"
+output:
+  bookdown::html_document2:
+    split_by: none
+    toc: no
+
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(lubridate)
+library(urltools)
+library(jsonlite)
+library(DT)
+knitr::opts_chunk$set(tidy = FALSE, message=FALSE, warning=FALSE)
+options(htmltools.dir.version = FALSE)
+```
+
+
+# Public Web APIs
+
+In this lesson you'll learn how to collect data from websites such as The New York Times, NASA, and Google Earth. While these sites are primarily known for the information they provide to humans browsing the web, they (along with most large websites) also provide information to computer programs.
+
+Humans use browsers such as Firefox or Chrome to navigate the web. Behind the scenes, our browsers communicate with web servers using a technology called [HTTP](https://en.wikipedia.org/wiki/Hypertext_Transfer_Protocol). 
+
+Programming languages such as R can also use HTTP to communicate with web servers. We have seen how it is possible for R to "scrape" data from almost any web page. However, it's easiest to interact with websites that are specifically designed to communicate with programs. These [Web Application Programming Interfaces (APIs)](https://en.wikipedia.org/wiki/Web_API) focus on transmitting data, rather than images, colors, or other appearance-related information.
+
+An enormous variety of web APIs provide data accessible to programs written in R (and almost any other programming language!). Almost all reasonably large commercial websites offer APIs. Todd Motto has compiled an excellent list of [Public Web APIs](https://github.com/toddmotto/public-apis) on GitHub, which includes categories like [environment](https://github.com/toddmotto/public-apis?tab=readme-ov-file#environment), [health](https://github.com/toddmotto/public-apis?tab=readme-ov-file#health), and [transportation](https://github.com/toddmotto/public-apis?tab=readme-ov-file#transportation). Browse the list to see what kind of information is available.
+
+
+## Wrapper Packages
+
+Possible readings: <br>
+1. [NY Times API](https://developer.nytimes.com/?mcubz=3) <br>
+2. [NY Times Blog post announcing the API](https://open.blogs.nytimes.com/2009/02/04/announcing-the-article-search-api/?mcubz=3&_r=0) <br>
+3. [Working with the NY Times API in `R`](https://www.storybench.org/working-with-the-new-york-times-api-in-r/)   
+4. [nytimes pacakge for accessing the NY Times' APIs from `R`](https://github.com/mkearney/nytimes) <br>
+5. [Video showing how to use the NY Times API](https://www.youtube.com/watch?v=3at3YTAFbxs) <br>
+6. [rOpenSci](https://ropensci.org/packages/) has a good collection of wrapper packages
+
+In R, it is easiest to use Web APIs through a *wrapper package*, an R package written specifically for a particular Web API. The R development community has already contributed wrapper packages for most large Web APIs. To find a wrapper package, search the web for "R Package" and the name of the website. For example, a search for "R Reddit Package" returns [RedditExtractor](https://cran.r-project.org/web/packages/RedditExtractoR/index.html) and a search for "R Weather.com Package" surfaces [weatherData](https://ram-n.github.io/weatherData/).
+
+This activity will build on the [New York Times Web API](https://developer.nytimes.com/), which provides access to news articles, movie reviews, book reviews, and many other data. Our activity will specifically focus on the 
+[Article Search API](https://developer.nytimes.com/docs/articlesearch-product/1/overview), which finds information about news articles that contain a particular word or phrase. 
+
+We will use the [nytimes](https://github.com/mkearney/nytimes) package that provides functions for some (but not all) of the NYTimes APIs. First, install the package by copying the following two lines into your console (you just need to run these once):
+
+```
+install.packages("devtools")
+devtools::install_github("mkearney/nytimes")
+```
+
+Next, take a look at the Article Search API example on the package website to get a sense of the syntax.
+
+```{exercise,name="No written answer necessary"} 
+What do you think the nytimes function below does? How does it communicate with the NY Times? Where is the data about articles stored?
+
+Based off the github, I think this line of code searchings for enbridge pipeline related to NY times with a latest publish date of 2022-01-01 and up to 20 finds. 
+```
+
+```{r eval=FALSE}
+res <- nyt_search(q="enbridge+pipeline", n = 20, end_date = "20220101")
+```
+
+To get started with the NY Times API, you must first [register for a developer account](https://developer.nytimes.com/accounts/create?) and login. Then, in the top right corner, select "Apps" from the pull-down menu under your name. That should bring you to the "My Apps" page, where you can click "+ New App." Give it any name ("DataScience", e.g., is fine), and then click the enable button on the "Article Search API" row down below. Once you do that, you should see an API **authentication key**, with a button to copy it.
+
+Store this in a variable as follows (this is just an example ID, not an actual one):
+
+```{r}
+times_key <- "2IoXDjYGCvd04ggHrRMHn1BfpQDgGD2a"
+```
+
+```{r echo=FALSE}
+fake_times_key <- "c935b213b2dc1218050eec976283dbbd"
+```
+
+Like many sites, the New York Times **rate limits** their API and ensures programs don't make too many requests per day. For the NY Times API, this limit is 1000 calls per day. Be aware that most APIs do have rate limits --- especially for their free tiers.
+
+Now, let's use the key to issue our first API call. We'll adapt the code we see in the vignette to do what we need.
+
+```{r}
+library(nytimes)
+
+# Tell nytimes what our API key is
+Sys.setenv(NYTIMES_KEY = times_key)
+
+# Issue our first API call
+res <- nyt_search(q="enbridge+pipeline", n = 20, end_date = "20220101")
+
+# Convert response object to data frame 
+res <- as_tibble(res)
+```
+
+Something magical just happened. Your computer sent a message to the New York Times and asked for information about 20 articles about "enbridge pipeline." Most of these articles discuss the controversial [Enbridge Line 3 pipeline](https://en.wikipedia.org/wiki/Line_3_pipeline) and protests about the pipeline.
+
+
+Let's take a peek at the structure of the results. You can also look at the data in the "Environment" tab in the upper right of RStudio:
+
+```{r }
+glimpse(res)
+head(res$web_url)
+head(res$headline)
+```
+
+
+## Accessing Web APIs Using JSON
+
+Wrapper packages such as `nytimes` provide a convenient way to interact with Web APIs. However, many Web APIs have incomplete wrapper packages, or no wrapper package at all. Fortunately, most Web APIs share a common structure that `R` can access relatively easily. There are two parts to each Web API: the **request**, which corresponds to a function call, and the **response**, which corresponds to the function's return value.^[Although we imply that a Web API call corresponds to a single function on the webserver, this is not necessarily the case. Still, we use this language because the analogy fits well.]
+
+As mentioned earlier, a Web API call differs from a regular function call in that the request is sent over the Internet to a webserver, which performs the computation and calculates the return result, which is sent back over the Internet to the original computer.
+
+
+**Web API Requests**
+
+Possible readings: <br>
+1. [Understanding URLs](https://www.tutorialspoint.com/html/understanding_url_tutorial.htm) <br>
+2. [urltools Vignette](https://cran.r-project.org/web/packages/urltools/vignettes/urltools.html)
+
+The request for a Web API call is usually encoded through the [URL](https://www.tutorialspoint.com/html/understanding_url_tutorial.htm), the web address associated with the API's webserver. Let's look at the URL associated with the first `nytimes` `nyt_search` example we did. Open the following URL in your browser (you should replace MY_KEY with the api key you were given earlier).
+
+    http://api.nytimes.com/svc/search/v2/articlesearch.json?q=enbridge%20pipeline&api-key=MY_KEY
+    
+
+The text you see in the browser is the response data. We'll talk more about that in a bit. Right now, let's focus on the structure of the URL. You can see that it has a few parts:
+
+* `http://` --- The **scheme**, which tells your browser or program how to communicate with the webserver. This will typically be either `http:` or `https:`.
+* `api.nytimes.com` --- The **hostname**, which is a name that identifies the webserver that will process the request.
+* `/svc/search/v2/articlesearch.json` --- The **path**, which tells the webserver what function you would like to call.
+* `?q=enbridge%20pipeline&api-key=MY_KEY` --- The **query parameters**, which provide the parameters for the function you would like to call. Note that the query can be thought of as a table, where each row has a key and a value. In this case, the first row has key `q` and value `enbridge pipeline`, and the second row has value `MY_KEY`. The query parameters are preceded by a `?`. Rows in the key-value table are separated by '&', and individual key-value columns are separated by an `=`.
+
+Typically, each of these URL components will be specified in the API documentation. Sometimes, the scheme, hostname, and path (`http://api.nytimes.com/svc/search/v2/articlesearch.json`) will be referred to as the [endpoint](https://en.wikipedia.org/wiki/Web_API#Endpoints) for the API call.
+
+We will use the `urltools` module to build up a full URL from its parts. We start by creating a string with the endpoint and then add the parameters one by one using `param_set` and `url_encode`:
+
+```{r,eval=FALSE}
+library(urltools)
+
+url <- "http://api.nytimes.com/svc/search/v2/articlesearch.json"
+url <- param_set(url, "q", url_encode("enbridge pipeline"))
+url <- param_set(url, "begin_date", url_encode("20180101"))
+url <- param_set(url, "end_date", url_encode("20220101"))
+url <- param_set(url, "api-key", url_encode(times_key))
+# could keep going, specifying the news desk, etc.
+# url <- param_set(url, "fq", url_encode("news_desk:Climate"))
+url
+```
+
+Copy and paste the resulting URL into your browser to see what the NY Times response looks like!
+
+```{exercise}
+You may be wondering why we need to use `param_set` and `url_encode` instead of writing the full url by hand. This exercise will illustrate why we need to be careful. 
+
+ a) Repeat the above steps, but create a URL that finds articles related to `Ferris Bueller's Day Off` (note the apostrophe). What is interesting about how the title appears in the URL?
+ b) Repeat the steps above for the phrase `Nico & Vinz` (make sure you use the punctuation mark `&`). What do you notice?
+ c) Take a look at the Wikipedia page describing [percent encoding](https://en.wikipedia.org/wiki/Percent-encoding). Explain how the process works.
+
+```
+```{r}
+# a)
+urlA <- "http://api.nytimes.com/svc/search/v2/articlesearch.json"
+urlA <- param_set(urlA, "q", url_encode("Ferris Bueller's Day Off"))
+urlA <- param_set(urlA, "api-key", url_encode(times_key))
+urlA # we can see in the produced url that the apostrophe becomes %27
+
+# b)
+urlB <- "http://api.nytimes.com/svc/search/v2/articlesearch.json"
+urlB<- param_set(urlB, "q", url_encode("Nico & Vinz"))
+urlB <- param_set(urlB, "api-key", url_encode((times_key)))
+urlB # we can see in the url produced that the & symbol becomes a huge series of numbers and % 
+```
+c) Percent encoding takes reserved characters and converts them individually into their ASCII byte value then representing them as hexadecimals. Single numbers are preceded with a zero, and a % symbol is placed in from of the conversion before being put into the URL. 
+
+
+
+## Web API Responses
+
+Possible readings: <br>
+1. [A Non-Programmer's Introduction to JSON](https://blog.scottlowe.org/2013/11/08/a-non-programmers-introduction-to-json/) <br>
+2. [Getting Started With JSON and jsonlite](https://cran.r-project.org/web/packages/jsonlite/vignettes/json-aaquickstart.html) <br>
+3. [Fetching JSON data from REST APIs](https://cran.r-project.org/web/packages/jsonlite/vignettes/json-apis.html)
+
+We now discuss the structure of the web response, the return value of the Web API function. Web APIs generate string responses. If you visited the earlier New York Times API link in your browser, you would be shown the string response from the New York Times webserver:
+
+```
+{"status":"OK","copyright":"Copyright (c) 2024 The New York Times Company. All Rights Reserved.","response":{"docs":[{"abstract":"Late Monday, the police arrested activists and appeared to use a crowd-dispersing sonic device at the Line 3 pipeline in Minnesota, which would carry oil across sensitive waterways and tribal lands.","web_url":"https://www.nytimes.com/2021/06/07/climate/line-3-pipeline-protest-native-americans.html","snippet":"Late Monday, the police arrested activists and appeared to use a crowd-dispersing sonic device at the Line 3 pipeline in Minnesota, which would carry oil across sensitive waterways and tribal lands.","lead_paragraph":"PARK RAPIDS, MINN. — The protesters who gathered in the boreal forests of Northern Minnesota came from across the country — Native American tribes and their supporters, environmentalists and religious leaders — all to fight an expansion of Line 3, a $9 billion pipeline operated by the Canadian company, Enbridge, that would carry hundreds of thousands of barrels of oil through Minnesota’s delicate watersheds and tribal lands.","print_section":"A","print_page":"14","source":"The New York Times","multimedia":[{"rank":0,"subtype":"xlarge","caption":null,"credit":null,"type":"image","url":"images/2021/06/07/climate/07CLI-PIPELINE8/merlin_188877492_d7f5b55f-94c8-4068-91bd-ba39205f251a-articleLarge.jpg","height":400,"width":600,"legacy":{"xlarge":"images/2021/06/07/climate/07CLI-PIPELINE8/merlin_188877492_d7f5b55f-94c8-4068-91bd-ba39205f251a-articleLarge.jpg","xlargewidth":600,"xlargeheight":400}...
+```
+
+If you stared very hard at the above response, you may be able to interpret it. However, it would be much easier to interact with the response in some more structured, programmatic way. The vast majority of Web APIs, including the New York Times, use a standard called JSON (Javascript Object Notation) to take data and encode it as a string. 
+To understand the structure of JSON, take the NY Times web response in your browser, and copy and paste it into an online [JSON formatter](https://jsonformatter.curiousconcept.com/). The formatter will add newlines and tabs to make the data more human interpretable. You'll see the following:
+
+```
+{  
+   "status":"OK",
+   "copyright":"Copyright (c) 2024 The New York Times Company. All Rights Reserved.",
+   "response":{  
+      "docs":[  
+      
+        # A HUGE piece of data, with one object for each of the result articles
+        
+      ],
+      "meta":{  
+         "hits":19,
+         "offset":0,
+         "time":28
+      }
+   }
+}     
+```
+
+You'll notice a few things in the JSON above:
+
+* Strings are enclosed in double quotes, for example `"status"` and `"OK"`.
+* Numbers are written plainly, like `2350` or `72`.
+* Some data is enclosed in square brackets `[` and `]`. These data containers can be thought of as R lists.
+* Some data is enclosed in curly braces `{` and `}`. These data containers are called  *Objects*. An  object can be thought of as a single observation in a table. The columns or variables for the observation appear as **keys** on the left (`hits`, `offset`, etc.). The **values** appear after the specific key separated by a colon.
+Thus, we can think of the `meta` object above as:
+
+```{r, results='as.is', echo=FALSE}
+library(kableExtra)
+
+knitr::kable(data.frame(hits=c(19), offset=c(0), time=c(28)), "html") %>%
+  kable_styling(full_width = F)
+
+```
+
+Let's repeat the NY Times search for "enbridge pipeline," but this time we will peform the Web API call by hand instead of using the `nytimes` wrapper package. We will use the `jsonlite` package to retrieve the response from the webserver and turn the string response into an `R` object. The `fromJson` function sends our request out over and across the web to the NY Times webserver, retrieves it, and turns it from a JSON-formatted string into R data.
+
+
+```{r}
+# Rebuild the URL
+url <- "http://api.nytimes.com/svc/search/v2/articlesearch.json"
+url <- param_set(url, "q", url_encode("enbridge AND pipeline"))
+url <- param_set(url, "begin_date", url_encode("20180101"))
+url <- param_set(url, "end_date", url_encode("20220101"))
+url <- param_set(url, "api-key", url_encode(times_key))
+
+# Send the request to the webserver over the Internet and 
+# retrieve the JSON response. Turn the JSON response into an
+# R Object.
+response_js <- fromJSON(url)
+```
+
+
+The  `jsonlite` makes the keys and values of an object available as attributes. For example, we can fetch the status:
+
+```{r}
+response_js$status
+```
+
+While some keys in the object are associated with simple values, such as `"status"`, others are associated with more complex data. For example, the key `"response"` is associated with an object that has two keys: `"docs"`, and `"meta"`. `"meta"` is another object: `{  "hits":19, "offset":0, "time":28 }`. We can retrieve these *nested* attributes by sequentially accessing the object keys from the outside in. For example, the inner `"hits"` attribute would be accessed as follows:
+
+```{r}
+response_js$response$meta$hits
+```
+
+
+```{exercise} 
+Retrieve the data associated with 1) the `copyright` key of the `response_js` object, and 2) the `time` attribute nested within the `meta` object.
+
+```
+```{r}
+response_js$copyright
+response_js$response$meta$time
+```
+
+
+The majority of the data is stored under `response`, in `docs`, which is a list of objects (articles in this case). `jsonlite` makes lists of objects available as a data frame, where the columns are the keys in the object (`web_url`, `snippet`, etc.)
+
+```{r}
+docs_df <- response_js$response$docs
+dim(docs_df)
+glimpse(docs_df)
+```
+
+One option that can be handy is to *flatten* the data:
+
+```{r}
+docs_df_flat<-jsonlite::flatten(docs_df)
+dim(docs_df_flat)
+colnames(docs_df_flat)
+```
+
+You see that each variable that used to be its own data frame has now been separated out into multiple variables whose names are comprised of the name of the initial variable, a period, and the name of the variable within that data frame.
+
+\
+
+
+```{exercise, name="Your own article search"}
+
+
+ a) Select your own article search query (any topic of interest to you). You may want to play with NY Times online search or the [API web search console](https://developer.nytimes.com/docs/articlesearch-product/1/routes/articlesearch.json/get) to find a query that is interesting, but not overly popular. You can change any part of the query you would like. Your query should have at least 15-30 matches.
+ b) Retrieve data for the first two to three pages of search results from the article search API, and create a data frame that joins together the `docs` data frames for the two to three pages of results.  Hints: 1. Results come in batches of 10 per page. To access different pages, you can use `param_set(url, "page",INSERT PAGE NUMBER HERE)` (indexing starts at 0). 2. If you get errors about too many requests or connection errors, you can try adding `Sys.sleep(1)` in between API calls. 3. You can use `bind_rows` to combine data frames with the same sets of variables.   
+ c) Make and display a table that contains the `pub_date`, `headline.main`, `byline.original`, `news_desk`, `web_url`, `word_count`, and `snippet` variables.
+ 
+```
+```{r}
+# a)
+urlEx <- "http://api.nytimes.com/svc/search/v2/articlesearch.json"
+urlEx <- param_set(urlEx, "q", url_encode("san francisco gentrification"))
+urlEx <- param_set(urlEx, "begin_date", url_encode("20180101"))
+urlEx <- param_set(urlEx, "end_date", url_encode("20220101"))
+urlEx <- param_set(urlEx, "api-key", url_encode(times_key))
+urlEx
+# Send the request to the webserver over the Internet and 
+# retrieve the JSON response. Turn the JSON response into an
+# R Object.
+response_js <- fromJSON(urlEx)
+
+# b) API will only let us grab one page at a time. therefore, we grab pages and flatten into df's in separates steps 
+urlEx <- param_set(urlEx, "page", 0) # grabbing first page (indexed at 0) and storing into url as another parameter
+page0_df <- response_js$response$docs # docs 
+page0_df_flat<-jsonlite::flatten(docs_df) # flatten into df 
+
+urlEx <- param_set(urlEx, "page", 1) # repeat for second page
+page1_df <- response_js$response$docs # docs 
+page1_df_flat<-jsonlite::flatten(docs_df) # flatten into df 
+
+urlEx <- param_set(urlEx, "page", 2) # repeat for second page
+page2_df <- response_js$response$docs # docs 
+page2_df_flat<-jsonlite::flatten(docs_df) # flatten into df 
+
+# using bind_rows to combine these separate dataframes into 1 giant set 
+df_page1_3 <- bind_rows(page0_df_flat, page1_df_flat, page2_df_flat)
+
+# c)
+final_table <- 
+  df_page1_3 %>%
+  select(pub_date, headline.main, byline.original, news_desk, web_url, word_count, snippet)
+```
+
+\
+
+
+```{exercise, name="Choose-your-own public API visualization"}
+ 
+ Browse [toddomotos' list of Public APIS](https://github.com/toddmotto/public-apis#science) and [abhishekbanthia's list of Public APIs](https://github.com/abhishekbanthia/Public-APIs). Select one of the APIs from the list. Here are a few criteria you should consider:
+
+ * Preferably select an API related to your project topic.
+ * You must use the JSON approach we illustrated above; not all APIs support JSON.^[If you want to use an API that does not support JSON, you can check if there is an `R` wrapper package.]
+ * Stay away from APIs that require OAuth for Authorization unless you are prepared for extra work before you get data! Most of the large social APIs (Facebook, LinkedIn, Twitter, etc.) require OAuth. toddomoto's page lists this explicitly, but you'll need to dig a bit if the API is only on abhishekbanthia's list.
+ * You will probably need to explore several different APIs before you find one that works well for your interests and this assignment.
+ * Beware of the `rate limits` associated with the API you choose. These determine the maximimum number of API calls you can make per second, hour or day. Though these are not always officially published, you can find them by Google (for example) `GitHub API rate limit`. If you need to slow your program down to meet the API insert calls to `Sys.sleep(1)`.
+ * If a wrapper package is available, you may use it, but you should also try to create the request URL and retrieve the JSON data using the techniques we showed earlier, without the wrapper package.
+
+Then sketch out one interesting visualization that relies on the public API you selected. Make sure the data you need is available. If it's not, try a new visualization or API. If it is, collect the data through the API and make a visualization.
+```
+```{r}
+sf_url <- "https://archive-api.open-meteo.com/v1/archive?latitude=37.3394&longitude=-121.895&start_date=2021-04-04&end_date=2024-04-04&hourly=temperature_2m,rain&daily=temperature_2m_max,apparent_temperature_mean&timezone=America%2FLos_Angeles"
+json_sf_temp <- fromJSON(sf_url)
+daily_sf_temp <- json_sf_temp$daily 
+daily_sf_temp <- data.frame(
+    time = daily_sf_temp$time,
+    temp = daily_sf_temp$temperature_2m_max, 
+    temp_mean = daily_sf_temp$apparent_temperature_mean
+)
+daily_sf_temp <- mutate(daily_sf_temp, location = "San Francisco")
+
+la_url <- "https://archive-api.open-meteo.com/v1/archive?latitude=34.0522&longitude=-118.2437&start_date=2021-04-04&end_date=2024-04-04&hourly=temperature_2m,rain&daily=temperature_2m_max,apparent_temperature_mean&timezone=America%2FLos_Angeles"
+json_la_temp <- fromJSON(la_url)
+daily_la_temp <- json_la_temp$daily
+daily_la_temp <- data.frame(
+  time = daily_la_temp$time,
+  temp = daily_la_temp$temperature_2m_max,
+  temp_mean = daily_la_temp$apparent_temperature_mean
+)
+daily_la_temp <- mutate(daily_la_temp, location = "Los Angeles")
+la_sf_temp <- rbind(
+  "San Francisco" = daily_sf_temp, 
+  "Los Angeles" = daily_la_temp)
+
+library(lubridate)
+la_sf_temp$time = ymd(la_sf_temp$time)
+
+ggplot(la_sf_temp, aes(x=time, y= temp)) +
+  geom_point(aes(color=location)) +
+  scale_x_date(breaks = "months") + 
+  theme(axis.text.x = element_text(angle = 90))+
+  labs(title="Mean Temperature of San Francisco and LA", x="Mean Temperature (Celsius)", y="Date")
+```
+[Link to API I used](https://open-meteo.com/en/docs/historical-weather-api#latitude=34.0522&longitude=-118.2437&hourly=temperature_2m,rain&daily=temperature_2m_max,apparent_temperature_mean&timezone=America%2FLos_Angeles)

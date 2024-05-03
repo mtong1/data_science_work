@@ -1,0 +1,821 @@
+---
+title: "| Data Science With an Eye Towards Sustainability    \n| Activity A5: Spatial Visualization and Mapping Data\n"
+author: "Madie Tong"
+output:
+  bookdown::html_document2:
+    split_by: none
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+
+```{r libraries, , include=FALSE}
+library(tidyverse)     # for data cleaning and plotting
+library(DT)            # for visualizing data tables 
+library(janitor)       # for automatically renaming variables
+library(ggmap)         # for mapping points on maps
+library(RColorBrewer)  # for color palettes
+library(sf)            # for working with spatial data
+library(leaflet)       # for highly customizable mapping
+library(ggthemes)      # for more themes (including theme_map())
+library(gplots)        # for col2hex() function
+library(socviz)        # for the US county map
+library(usmap)         # for plot_usmap
+library(usdata)       # for abbr2state function
+library(choroplethr)   # another option to make choropleths
+library(choroplethrMaps)
+```
+
+
+
+# Learning Goals
+
+After this activity, you should be able to do the following:
+
+* Plot data points on top of a map using the `ggmap()` function along with `ggplot2` functions      
+* Create choropleth maps using `geom_map()`      
+* Add points and other `ggplot2` features to a map created from `geom_map()`   
+* Understand the basics of creating a map using `leaflet`, including adding points and choropleths to a base map   
+
+\
+
+#  Motivation
+
+Take a look at these to get motivated/inspired to make your own geospatial visualizations:
+
+* [Climate data visualizations](https://theglobalobservatory.org/2023/12/2023-a-year-in-climate-data-visualizations/)
+* [New York Times article on effects of redlining](https://www.nytimes.com/interactive/2020/08/24/climate/racism-redlining-cities-global-warming.html?fbclid=IwAR1iX20gZcHt-HERYeJs0t2fjSXRJh2aBYYSfSkpc50dBvfByBCWezTSXbw) 
+* [New York City tree map](https://tree-map.nycgovparks.org/)
+* [NY Times mayoral primaries](http://www.nytimes.com/projects/elections/2013/nyc-primary/mayor/map.html)
+* [flickr](https://www.flickr.com/map)
+* [Super zip shiny app](http://shiny.rstudio.com/gallery/superzip-example.html)
+* [Best spatial visualizations of 2023 by CARTO](https://carto.com/blog/2023-best-maps-dataviz)
+
+
+\
+
+# Public Electric Vehicle Charging Stations in the United States
+
+As the number of electric vehicles used increases, so do the number of electric vehicle charging stations and ports. The Open Charge Point Interface (OCPI) protocol is a standard for classifying stations according to (1) location, (2) number of charging ports, and (3) number of connectors/plugs (multiple connectors can be on a port, but only one can be used at any given time). Charging equipment is separated into Level 1 charging, Level 2 charging, and DC fast charging, in increasing speed of charging.  Read more about these standards [here](https://afdc.energy.gov/fuels/electricity_infrastructure.html#terms). 
+
+According to the Alternative Fuels Data Center (AFDC), as of January 2024, there are 61,124 public electric vehicle charging stations in the United States, and they have 163,191 ports. These numbers have approximately doubled in the last three years:
+
+![](http://faculty.olin.edu/dshuman/DS/us-public-electric-vehicle-stations.png)
+
+Image source: [Alternative Fuels Data Center](https://afdc.energy.gov/data/10972).
+
+
+Where are these stations? How is there distribution across the country related to land area? population? electric vehicle ownership? demographic measures such as socioeconomic, race, and ethnicity?
+
+You can read more about how AFDC collects its data [here](https://afdc.energy.gov/fuels/electricity_locations.html#/analyze?country=US&show_about=true). Let's load and display the relevent part of the data:
+
+```{r,echo=FALSE,cache=TRUE}
+ev_stations<-read_csv("http://faculty.olin.edu/dshuman/DS/electric_vehicle_stations_jan_2024.csv",col_type=list(`Date Last Confirmed` = readr::col_date(format = "%m/%d/%y")))
+ev_stations<-janitor::clean_names(ev_stations) # convert variable names to lowercase and remove spaces
+ev_stations<-filter(ev_stations,longitude < -50,latitude>10,!is.na(state))
+ev_stations$ev_level1_evse_num[is.na(ev_stations$ev_level1_evse_num)]<-0
+ev_stations$ev_level2_evse_num[is.na(ev_stations$ev_level2_evse_num)]<-0
+ev_stations$ev_dc_fast_count[is.na(ev_stations$ev_dc_fast_count)]<-0
+ev_stations$total_ports=ev_stations$ev_level1_evse_num+      ev_stations$ev_level2_evse_num+ev_stations$ev_dc_fast_count
+ev_stations$state_name<- str_to_lower(abbr2state(ev_stations$state))
+```
+
+```{r,echo=FALSE,fig.width=14}
+DT::datatable(ev_stations, options = list(pageLength = 8))
+```
+
+
+\
+
+```{exercise,name="Warmup: Stations by state"}
+
+a. Make a chart with the states on the horizontal axis and vertical bars corresponding to the number of stations in each state. Sort the bars so that the state with the most stations is on the left. Add a title. 
+
+b. Now flip the coordinates so that the bars are horizontal and sort them so that the state with the most stations is on top. Then use the options in `theme()` to align your plot title all the way to the left of the graphic, turn off the background, turn off the grid lines, turn off the tick marks for both axes, and turn off the axis labels for the numeric horizontal axis.
+
+c. Which version of the chart do you like better? This video on [The Glamour of Graphics](https://posit.co/resources/videos/the-glamour-of-graphics/) (you can probably start at 3:45) by William Chase has a lot of good advice about layout, color, and typography for your plots.  
+
+```
+```{r}
+# a)
+ggplot(ev_stations, aes(x=reorder(state, state, function(x)-length(x)))) +
+  geom_bar()+
+  labs(x="State", y="Number of Stations", title="Number of Stations in Each State")
+
+# b)
+ggplot(ev_stations, aes(x=reorder(state, state, function(x)+length(x)))) +
+  geom_bar()+
+  coord_flip()+
+  labs(x="State", y="Number of Stations", title="Number of Stations in Each State")+
+  theme(axis.ticks.length=unit(0, "cm"), panel.grid=element_blank(), axis.text.x = element_blank()) # element_blank() function to make none 
+
+```
+c) I prefer the second one slightly, though I liked the axis labels. Both do well at conveying size comparison through the order. Personally, I feel like the second one is more prominent and is quicker at conveying the stark contrast of stations in each state. 
+
+\
+
+
+# Plotting the Charging Station Locations on a Map
+
+We can start by using `ggplot2` to make a point plot of all of the stations:
+
+```{r,fig.width=6}
+ggplot(data=ev_stations) +
+  geom_point(aes(x = longitude, y = latitude), 
+             alpha = 0.2, 
+             size = .2)
+```
+
+## Example: Superimposing Point Data on Top of a Map
+
+To highlight the geographical nature of this scatterplot, we can superimpose the points on top of a map, using the `ggmap()` function from the `ggmap` library. We'll use the stamen maps from [Stadia Maps](https://docs.stadiamaps.com/tutorials/getting-started-in-r-with-ggmap/).
+
+```{exercise,name="Sign up for a Stadia API key"}
+To use the Stadia Maps, you'll each need your own registered API key. To get that, follow the instructions [here](https://docs.stadiamaps.com/tutorials/getting-started-in-r-with-ggmap/). Specifically:
+
+a. Go to [client dashboard](https://client.stadiamaps.com/dashboard/) and sign up for a new account. Verify it by clicking on the email they send you.
+
+b. Click "manage properties" and then "add an API key." You can name it something like "RStudio".
+
+c. Copy the API key into the code chunk below and delete the `eval=FALSE`:
+
+```
+
+
+```{r}
+register_stadiamaps("1f9e47d7-a59f-4f02-b0b4-0e724e450230", write = TRUE)
+```
+
+
+**Note**: If you prefer Google maps, they also work with `ggmap()`. We used to be able to easily bring in Google maps, but now you need to have a registered API key for that as well, and they require you to give a credit card number. If you want to do that, see `google_key` in the help. Then, see the documentation for `get_map()`. An account does come with a significant amount of free use, but for the required class materials, we are not going to do anything that requires a credit card.
+
+
+Now we are ready to make an example and walk through the syntax.
+
+```{r,cache=TRUE}
+# Get the map information
+mymap <- get_stadiamap(
+    bbox = c(left = -170, bottom = 10, right = -60, top = 66), 
+    maptype = "stamen_toner_lite",
+    zoom =4)
+```
+
+```{r,fig.width=6}
+# Plot the points on the map
+ggmap(mymap) + # creates the map "background"
+  geom_point(data = ev_stations, 
+             aes(x = longitude, y = latitude), 
+             alpha = .05, 
+             size = .15,
+             color="blue")+
+  theme_map()
+```
+
+Next, we will walk through the `get_get_stadiamap()` function arguments. The code below is what was used to get the world map information.
+
+```{r get_stadiamap-code, eval=FALSE}
+get_stadiamap(
+    bbox = c(left = -170, bottom = 10, right = -60, top = 66), 
+    maptype = "stamen_toner_lite",
+    zoom =4)
+```
+
+**`bbox`**
+
+The `bbox` argument tells it the minimum and maximum latitude and longitude points. So, left is the minimum longitude, right is the maximum longitude, bottom is the minimum latitude, and top is the maximum latitude. One helpful trick is to go to [openstreetmap](https://www.openstreetmap.org): zoom in on the area of interest, click export, and you will see all the values you need. You may have to modify them slightly, which you can do after your initial plot.
+
+**`maptype`**
+
+The `maptype` tells it the style of the map. Check out the different options by looking in the `get_stadiamap` help (type `?get_stadiamap` in the console).
+
+**`zoom`**
+
+When you make a large area, you need to decrease the zoom, otherwise it will take too long to load. So, it's a good idea to start with a small zoom and you can always make it bigger if you want. This might seem counter-intuitive at first. Think of the zoom level as the level of detail. So, smaller numbers show less detail and larger numbers more detail. A good trick is to go to the stamenmaps [webpage](https://maps.stamen.com/#toner/12/37.7706/-122.3782) and search for the location you are mapping. Then, in the URL, you can see the zoom number. For example, this link  is a map of the Olin area: [https://maps.stamen.com/#toner/12/37.7706/-122.3782](https://maps.stamen.com/#toner/12/37.7706/-122.3782). Notice the number `12` next to  `/#toner/`. That means it is zoomed in at 12. 
+
+**`ggmap()`**
+
+We save the the map information from `get_stadiamap()` to a named value and then use it in `ggmap()`:
+```{r,eval=FALSE}
+ggmap(mymap)
+```
+
+The `ggmap()` function will print the "background" map. Think of it as the providing the canvas on which we will plot. This takes the place of our usual `ggplot()`.
+
+
+After that, we can use the `geom_XXX()` functions from `ggplot2` that we are used to in order to put points, lines, etc. on top of the map. But, we need to remember to also provide the data we are using in the `geom_XXX()` function(s) we use, since we do not have the `ggplot()` function in which to provide it. 
+
+```{r,eval=FALSE}
+# Plot the points on the map
+ggmap(mymap) + # creates the map "background"
+  geom_point(data = ev_stations, 
+             aes(x = longitude, y = latitude, size = total_ports), 
+             alpha = .05,
+             color="blue")+
+  theme_map()
+
+# before part a, the size = 0.5 was placed outside the aes()
+```
+
+
+**`theme_map()`**
+
+The last line of the code is `theme_map()`. This is an optional line from the `ggthemes` package, but it often makes it look nice.
+
+**`qmplot()`**
+
+An alternative is the function `qmplot()`, which allows you to not specify the bounding box:
+
+# ```{r,fig.width=6,eval=FALSE}
+qmplot(longitude, latitude, data = ev_stations, maptype = "alidade_smooth", zoom=5,color = I("blue"))
+
+
+\
+
+## Additional Resources
+
+* [Prof. Lisa Lendway's demo video](https://www.youtube.com/embed/2k8O-Y_uiRU)
+* [Examples](https://github.com/dkahle/ggmap) from `ggmap` maintainer David Kahle  
+* [`ggmap` cheatsheet](https://www.nceas.ucsb.edu/sites/default/files/2020-04/ggmapCheatsheet.pdf)
+
+\
+
+## Practice
+
+```{exercise}
+   
+a. Add an aesthetic to the example map above that sets the size of the points according to the `total_ports` variable. What, if anything, can you deduce from this visualization?     
+b. Construct a new map of electric vehicle locations in the area around Olin (within a few towns).     
+c. In the Olin plot, play with the zoom number. What does it do?  (just describe what it does - don't actually include more than one map).     
+d. Try a couple different map types (see `get_stadiamap()` in help and look at `maptype`). Include a map with one of the other map types.     
+e. Add a point to the map that indicates Olin College and label it appropriately. There are many ways you can do this, but it may be easiest with the `annotate()` function (see `ggplot2` cheatsheet).
+
+```
+a) Including the variation of point sizes based on the total_ports variable helps to visually show areas with more ports. The aesthetic has been added to the example map code above. 
+b) 
+```{r}
+# i generated the bounding box/map for this graph by visiting the website listed above at bbox, zooming into my desired area, then exporting the numbers
+olin_map <- get_stadiamap(
+    bbox = c(left = -71.3718, bottom = 42.2318, right = -71.1143, top = 42.3478), 
+    maptype = "stamen_toner_lite",
+    zoom =12)
+
+ggmap(olin_map) +
+  geom_point(data = ev_stations,
+             aes(x = longitude, y = latitude, size = total_ports),
+             alpha = .5,
+             color="blue") +
+  theme_map()
+```
+c) The zoom feature controls the level of detail that is shown on the plot. A higher zoom level, max 14, is not only higher quality resolution but also includes finer details sucha s streets, town names, etc. Lower zoom level abstracts many of these details such that only the most prominent/important aspects of the map are highlighted, and the resolution is diminished. 
+d) 
+```{r}
+olin_map <- get_stadiamap(
+    bbox = c(left = -71.3718, bottom = 42.2318, right = -71.1143, top = 42.3478), 
+    maptype = "stamen_terrain",
+    zoom =12)
+
+olin_point <- data_frame(
+  lat = -71.26380684332489, 
+  long = 42.29305652997042
+)
+
+ggmap(olin_map) +
+  geom_point(data = ev_stations,
+             aes(x = longitude, y = latitude, size = total_ports),
+             alpha = .5,
+             color="blue") +
+  geom_point(data = olin_point, x=olin_point$lat, y = olin_point$long, color="red")+
+  annotate("text", x = -71.26, y=42.29, label = "Olin College of Engineering") +
+  theme_map()
+  
+  # x is latitude, y is longitude 
+```
+e) The code line above annotate() adds a point on the map. 
+
+\
+
+# Contour Maps
+
+The `geom_density_2d` and `stat_density_2d` functions are great for plotting distributions over spatial regions. Here is an example that shows the densities of public electric vehicle charging stations in the United States.
+
+```{r, fig.width=6,cache=TRUE}
+us48 <- get_stadiamap(
+    bbox = c(left = -132, bottom = 20, right = -65, top = 55), 
+    maptype = "stamen_terrain",
+    zoom = 4)
+
+ggmap(us48)+
+  geom_density_2d(data=ev_stations, aes(x=longitude,y=latitude),size=.3)+
+  stat_density_2d(data = ev_stations, 
+    aes(x=longitude,y=latitude, fill = ..level.., alpha = ..level..), 
+    size = 0.1, bins = 20, geom = "polygon") + 
+  scale_alpha(guide = FALSE) +
+  scale_fill_gradient(low = "yellow", high = "red")+
+  theme_map()
+```
+\
+
+# Choropleths
+
+Geographical data needn't be expressed by latitude and longitude. For choropleth maps, instead of visualizing our data as points with different aesthetics (size, color, transparency, etc.), we color different regions of the maps based on data values. To do this we need to specify both the geometric regions on which the data resides (counties, states, zip codes, etc.), and then wrangle the data so that there is one value per region. 
+
+Let's return to the electric vehicle charging stations and make some choropleths. 
+
+## Method 1: `geom_map()`
+
+The main method we'll examine is to use `geom_map()` to create a choropleth map. 
+
+### Example 1: State Data
+
+The `states_map` dataset gives information about creating the borders of the US states. The data is retrieved using the `map_data()` function. Run `?map_data` in the console to see more information about what other maps are available. There are also other packages that provide different types of maps.
+
+Let's take a look at the map and we'll go through the details afterwards.
+
+
+```{r,cache=TRUE}
+# load the data aggregated by state
+ev_stations_by_state<-read_csv("http://faculty.olin.edu/dshuman/DS/ev_stations_by_state.csv")
+```
+
+```{r}
+#US states map information - coordinates used to draw borders
+states_map <- map_data("state")
+
+# map that colors state by number of charging stations
+ggplot(ev_stations_by_state) +
+  geom_map(map = states_map,
+           aes(map_id = state_name,
+               fill = num_stations)) +
+  #This assures the map looks decently nice:
+  expand_limits(x = states_map$long, y = states_map$lat) + 
+  theme_map()
+```
+
+or with a different color scheme:
+```{r}
+ggplot(ev_stations_by_state) +
+  geom_map(map = states_map,
+           aes(map_id = state_name,
+               fill = num_stations)) +
+  expand_limits(x = states_map$long, y = states_map$lat) + 
+  scale_fill_gradientn(colours = c("blue", "white", "red"))+
+  theme_map()
+```
+
+
+Now, let's look more closely at what each piece of the code below is doing.
+
+```{r eval=FALSE}
+ggplot(ev_stations_by_state) +
+  geom_map(map = states_map,
+           aes(map_id = state_name,
+               fill = num_stations)) +
+  expand_limits(x = states_map$long, y = states_map$lat) + 
+  theme_map()
+```
+
+**`map`: choose a map**
+
+The `map` argument tells `R` at which level to create the map. Really, it tells it how to draw all the borders This is a very special data set. According to the `geom_map()` documentation, it is a "data frame that contains the map coordinates ... It **must** contain columns x or long, y or lat, and region or id." We are using the `map_data()` function to create the map file (see above for more detail). You can open the map data, `states_map`, and see that it adheres to the rules.
+
+
+**`map_id`: connect map ID/region variable to data being plotted**
+
+The `map_id` inside of `aes()` is a required aesthetic for the `geom_map()` geom. It tells `R` which variable is the region/id variable, in this case the state. It connects the `region` or `id` from the map (`region` variable in `states_map` dataset, in this example) to the dataset being plotted (`state_name` in `ev_stations_by_state`, in this example). So `state_name` needs to have the same form as `region`. 
+
+**use `ggplot2` features**
+
+We tell it to fill in the states by the variable `num_stations`, the number of electric vehicle charging stations in each state. With the `geom_map()` geom, it will fill in the borders of the regions we defined in the `map` argument.
+
+
+**`expand_limits()`**
+
+Use `expand_limits()` to assure that the map covers the entire area it's supposed to. We put the longitude variable from `states_map` for the `x` argument and the latitude variable from `states_map` for the `y` argument to assure the map stretches across the entire range of longitudes and latitudes in the map.  
+
+**`theme_map()`**
+
+This is a personal preference, but `theme_map()` often makes the map look nicer.
+
+
+**add `ggplot2` layers**
+
+You can add any of the `ggplot2` layers on top of this map. For example, we can add a title and the station locations as points:
+
+```{r}
+ev_stations48<-filter(ev_stations,!state %in% c("PR","AK","HI") )
+ggplot(ev_stations_by_state) +
+  geom_map(map = states_map,
+           aes(map_id = state_name,
+               fill = num_stations)) +
+    geom_point(data = ev_stations48,
+           aes(x = longitude, y = latitude),
+           size = .05,
+           alpha = .2, 
+           color = "goldenrod")+
+  lims(x=c(-125,-65),y=c(23,50))+
+  theme_map()+
+  ggtitle("Public Electric Vehicle Charging Stations in the United States")
+```
+
+### Example 2: County Data
+
+This data set did not come with the county name or [FIPS code](https://transition.fcc.gov/oet/info/maps/census/fips/fips.txt) for each station. So, using the process outlined [here](https://gist.github.com/apalbright/84cff7cb220f9db41138f7fa9b72e511), I had `R` associate a county with the latitude-longitude coordinates for each stations, tacked the county name and FIPS code onto the data set, and tallied up the stations by county:
+
+```{r}
+ev_stations_by_county<-read_csv("http://faculty.olin.edu/dshuman/DS/ev_stations_by_county.csv")
+```
+
+Now we can load a county map and make a choropleth:
+```{r}
+county_map<-socviz::county_map # from socviz library
+ggplot(ev_stations_by_county)+
+  geom_map(data=ev_stations_by_county,map=county_map,aes(map_id=fips, fill=num_stations))+
+  expand_limits(x = county_map$long, y = county_map$lat)+
+  theme_map()+
+  theme(legend.position = "right")+
+  labs(fill=element_blank(),title="Number of Public Electric Vehicle Charging Stations by United States County")
+```
+
+With this coloring scale, it is nearly impossible to tell a county that has 0 stations from a county that has 10 stations or a county that has 100 stations. One way to address is this is to make a new discrete (categorical) variable by using `cut()` to group the counties into bins according to their number of stations:
+
+```{r}
+# define appropriate (& nicely labeled) breaks
+ev_stations_by_county$num_stations_cat <- cut(ev_stations_by_county$num_stations, 
+                      breaks=c(-1,.99,10,100,seq(500,4000,by=500)), 
+                      labels=c("0", "1-10", "11-100", "101-500", 
+                               "501-1000", "1001-1500", "1501-2000", "2001-2500", "2501-3000", "3001-3500","3501-4000"),
+                      include.lowest=TRUE)
+```
+
+Now we can make a second map that is easier to read:
+
+```{r}
+ggplot(ev_stations_by_county)+
+  geom_map(data=ev_stations_by_county,map=county_map,aes(map_id=fips, fill=num_stations_cat))+
+ scale_fill_manual(values = rev(brewer.pal(8,"RdBu")))+
+  expand_limits(x = county_map$long, y = county_map$lat)+
+  theme_map()+
+  theme(legend.position = "right")+
+  labs(fill=element_blank(),title="Number of Public Electric Vehicle Charging Stations by United States County")
+```
+
+
+
+
+### Additional Resources
+
+* [Prof. Lisa Lendway's demo video](https://www.youtube.com/embed/iS59a5wDrEM)
+* [geom_map() documentation](https://ggplot2.tidyverse.org/reference/geom_map.html)  
+* [Example](https://rstudio-pubs-static.s3.amazonaws.com/78148_6dd49b5dab4c4f5a8b1a74e5893ff17d.html) by Arie Voorman (some things could be out of date since it's from 2015)
+
+
+\
+
+## Alternative Choropleth Methods
+
+There are plenty of other methods available to make choropleths in `R`. 
+
+Let's demonstrate just three additional methods.
+
+
+### Alternative 1: `ggplot` + `geom_polygon`
+
+
+```{r}
+mapping_data <- ev_stations_by_county %>% 
+  mutate(id = fips) %>% 
+  left_join(county_map, by = "id")
+```
+
+```{r}
+ggplot(mapping_data, aes(x = long, y = lat, fill = num_stations_cat, group = group)) + 
+  coord_equal() + 
+  geom_polygon(color = NA)+
+  theme_map()+
+  theme(legend.position = "right")+
+  scale_fill_manual(values = rev(brewer.pal(8,"RdBu")))+
+  labs(fill=element_blank(),title="Number of Public Electric Vehicle Charging Stations by United States County")
+```
+
+### Alternative 2: `plot_usmap`
+
+```{r}
+# This function is in the usmap package
+plot_usmap(data = ev_stations_by_county, values = "num_stations_cat",color=NA)+
+  scale_fill_manual(values = rev(brewer.pal(8,"RdBu")))+
+  labs(fill=element_blank(),title="Number of Public Electric Vehicle Charging Stations by United States County")+
+  theme(legend.position = "right")
+  
+```
+
+### Alternative 3: `choroplethr` Package
+
+The `county_choropleth` function in the `choroplethr` package requires the variable of interest to be stored as `value` and the FIPS code to be stored in `region`. The following code does this for the charging station data:
+
+```{r}
+ev_stations_by_county <- mutate(ev_stations_by_county, value=num_stations_cat,region=as.double(fips))
+```
+
+
+```{r}
+county_choropleth(ev_stations_by_county)+
+scale_fill_manual(values = rev(brewer.pal(8,"RdBu")))+ labs(fill=element_blank(),title="Number of Public Electric Vehicle Charging Stations by United States County")
+```
+
+\
+
+We can also zoom in on specific states:
+
+```{r}
+county_choropleth(ev_stations_by_county, state_zoom="massachusetts")+
+ scale_fill_manual(values = rev(brewer.pal(8,"RdBu")))+ labs(fill=element_blank(),title="Number of Public Electric Vehicle Charging Stations by Massachusetts County")
+```
+
+
+For this one , we can try increasing the color resolution by giving it the continuous variable directly and letting the package choose the discrete colors:
+
+```{r}
+ev_stations_by_county2 <- mutate(ev_stations_by_county, value=num_stations)
+county_choropleth(ev_stations_by_county2, state_zoom="massachusetts")+ labs(fill=element_blank(),title="Number of Public Electric Vehicle Charging Stations by Massachusetts County")
+```
+
+\
+
+## Practice
+
+\
+
+The examples above did not account for population of each state in the map. The `ev_stations_with_2018_pop_est` dataset includes a new variable, `ev_stations_per_10000`, that gives the number of public electric vehicle charging stations per 10,000 people.
+
+```{r,echo=FALSE}
+# we'll learn what all of this code does next week
+census_pop_est_2018 <- read_csv("http://faculty.olin.edu/dshuman/DS/us_census_2018_state_pop_est.csv") %>% 
+  separate(state, into = c("dot","state"), extra = "merge") %>% 
+  select(-dot) %>% 
+  mutate(state = str_to_lower(state))
+
+ev_stations_with_2018_pop_est <-
+  ev_stations_by_state %>% 
+  left_join(census_pop_est_2018,
+            by = c("state_name" = "state")) %>% 
+  mutate(ev_stations_per_10000 = (num_stations/est_pop_2018)*10000)
+```
+
+
+```{exercise}
+Create a choropleth map that shows the number of electric vehicle charging stations per 10,000 people on a map of the US. Use a new fill color, add an informative title for the plot, and include a caption that says who created the plot (you!). Make a conclusion about what you observe.   
+
+```
+ggplot(mapping_data, aes(x = long, y = lat, fill = num_stations_cat, group = group)) + 
+  coord_equal() + 
+  geom_polygon(color = NA)+
+  theme_map()+
+  theme(legend.position = "right")+
+  scale_fill_manual(values = rev(brewer.pal(8,"RdBu")))+
+  labs(fill=element_blank(),title="Number of Public Electric Vehicle Charging Stations by United States County")
+
+```{r}
+ggplot(ev_stations_with_2018_pop_est)+
+  geom_map(aes(map_id=state_name, fill=num_total_ports), map=states_map)+ # map = the states, map id = how we graph total_ports by state name 
+  expand_limits(x = states_map$long, y = states_map$lat)+
+  scale_fill_gradient2(mid="blue", high="green") +
+  theme_map()
+```
+
+\
+
+
+# Dynamnic Maps with `leaflet`
+
+
+[Leaflet](htts://leafletjs.com/) is an open-source JavaScript library for creating maps. It can be used outside of R, but we will only discuss using the `leaflet` library in R. 
+
+This library uses a different plotting framework from `ggplot2` although it still has a `tidyverse` feel due to its use of the pipe, `%>%` and the way it adds layers to the plot, just like in `ggplot2`.
+
+
+## Steps to Create a Map
+
+1. Create a map widget by calling `leaflet()` and telling it the data to use.  
+2. Add a base map using `addTiles()` (the default) or `addProviderTiles()`.
+3. Add layers to the map by using layer functions (e.g. , `addMarkers()`, `addPolygons()`) to modify the map widget.   
+4. Repeat step 3 as desired.  
+5. Print the map widget to display it.
+
+## Creating a Map with Markers/Points
+
+Below, we create a basic map and add points of interest. You can use a "two-finger scroll" to zoom in and out. **WARNING: DO NOT FORGET THE ~ BEFORE THE VARIABLE NAMES!!!** 
+
+```{r}
+ev_stations_needham_wellesley<-filter(ev_stations,state=="MA",city %in% c("Needham","Wellesley")) # you can add more places, but it may take a while to run
+leaflet(data = ev_stations_needham_wellesley) %>% #base plot
+  addTiles() %>% #base map - default is openstreet map 
+  addMarkers(lng = ~longitude, 
+             lat = ~latitude, 
+             label = ~station_name) 
+```
+
+We can change just about everything about our map:
+
+* The base map with `addProviderTiles()`. 
+
+  + To see all available provider base maps, type `providers` in the console.  
+  
+  + To access those maps, use `providers$PROVIDERNAME` inside the `addProviderTiles()` function, where `PROVIDERNAME` is one of those listed `providers`. When you type `provider$` a list should show up that you can click on. 
+
+* The marker type by using `addCircles()` instead of `addMarkers()` - Search `addControl` in the Help or type `?addControl` into the console to see what all the arguments mean and how you can change them.
+
+Here is one more example showing some of these options:
+```{r}
+leaflet(data = ev_stations_needham_wellesley) %>%
+  addProviderTiles(providers$CartoDB.Positron)%>%
+  addCircles(lng = ~longitude,
+             lat = ~latitude, 
+             label = ~station_name, 
+             weight = 10, 
+             opacity = 1, 
+             color = col2hex("darkblue")) 
+```
+
+Some other notes:
+
+* All variable arguments are preceded with a tilde, `~`.
+
+* The `weight` argument tells it how thick to make the lines or points, pixels. 
+
+* The `opacity` argument is the transparency, like the `alpha` argument in `ggplot2`. 
+
+* Colors need to be in "hex" form. The `col2hex()` function from the `gplot` library will do that. The colors also need to be valid `R` colors.
+
+
+## Choropleth Layers with `addPolygons()`
+
+For making maps with borders (like choropleth maps), the functions can receive the base maps with spatial data a few different ways. In the example here, we use functions from the `sf` package to get the data in the right form. In the demo video listed under Resources below, a data.frame is translated to an `sf` object. Hopefully those two sets of instructions fit most of the cases you are interested in.
+
+In the data code chunk below, the function `st_read()` downloads the shape file for the counties of North Carolina, which is included in the `sf` package. 
+
+```{r}
+# North Carolina births and sids deaths 
+nc <- st_read(system.file("shape/nc.shp", package="sf"), 
+              quiet = TRUE) %>% 
+  mutate(sid_per_1000birth_79 = SID79/BIR79*1000)
+
+# Compute centroid (center) of each county
+county_centroid_lat_long <- as_tibble(st_coordinates(st_centroid(nc))) %>% 
+  rename(centr_long = X, 
+         centr_lat = Y)
+
+# County names and sid_per_1000birth_79
+nc_centroid_county <- st_drop_geometry(nc) %>% 
+  select(NAME, sid_per_1000birth_79)
+
+# All centroid level info
+nc_centroid <-  county_centroid_lat_long %>% 
+  bind_cols(nc_centroid_county)
+
+```
+
+The dataset has number of births and number of SIDS cases in each county of North Carolina from 1974-1979 and 1979-1984. We computed a variable called `sid_per_1000birth_79` which is the number of SIDS cases per 1000 births in 1979. 
+
+Below, the the NAMES and geometry variables from the first five rows of the data are printed out. The `geometry` variable contains information about how to plot the boundaries of the counties. Open the dataset and examine the `geometry` variable. The `leaflet` function knows that the `geometry` variable contains this special information.
+
+```{r}
+nc %>% 
+  select(NAME, geometry) %>% 
+  slice(1:5)
+```
+
+To learn more about the data type `nc` into the Help menu or `?nc` into the console. 
+
+This plot puts the map with North Carolina county borders on top of the Open Street Map. This map isn't that interesting by itself. 
+```{r}
+leaflet(nc) %>% 
+  addTiles() %>% 
+  addPolygons()
+```
+
+Now, let's use some of the data to enhance the graph by creating a choropleth map where we color the counties by `sid_per_1000birth_79`. In `ggplot()`, we can map a variable to color or fill inside the aesthetic, but in the `leaflet` functions we cannot do this. Instead, we need to create a variable of hex color names that tells it how to color or fill. Thankfully, there are functions that help us do that! Let's walk through the detail of how we created the graph below. 
+
+```{r choro}
+#creates a function that can be used to map a variable to
+#the color palette using viridis
+pal <- colorNumeric("viridis", 
+                     domain = nc$sid_per_1000birth_79) 
+
+leaflet(nc) %>% 
+  addTiles() %>% 
+  addPolygons(
+    fillColor = ~pal(sid_per_1000birth_79), #fills according to that variable
+    fillOpacity = 0.7) #like alpha in ggplot
+```
+
+The `colorNumeric()` function returns a function that maps a variable's values to colors in the given palette, in this case "viridis". So, `pal()` is a function. We can then use that function inside `addPolygons()`. If we apply the function to the `sid_per_1000birth_79` variable, it returns a variable of hex colors and the variable of colors is used to fill the counties. 
+
+Below we print out what happens when `pal()` is applied to `sid_per_1000birth_79`. We can see that it returns hex colors. So, the variable in the `fillColor` argument inside `addPolygons()` above, is a variable of hex color names.
+
+```{r}
+head(pal(nc$sid_per_1000birth_79))
+```
+
+Again, this is different from `ggplot()`, where we could map a variable to color or fill and it would do the translating of variable to color scale for us. In the `leaflet` functions, we have to explicitly provide the colors in a variable. The `colorNumeric()` command helps you do that. `colorBin()`, `colorQuantile()`, and `colorFactor()` are other functions you might need to use depending on the type of variable you are trying to map to colors.
+
+There are many customizeable options in `leaflet`, much like `ggplot()`. Here is a commented set of code  to point out some useful functions and arguments: 
+
+```{r}
+#creates a function that can be used to map a variable to
+#the color palette using viridis
+pal <- colorNumeric("viridis", 
+                     domain = nc$sid_per_1000birth_79) 
+
+leaflet(nc) %>% 
+  addTiles() %>% 
+  addPolygons(
+    #skips drawing the borders:
+    stroke = FALSE, 
+    #fills according to variable of hex colors:
+    fillColor = ~pal(sid_per_1000birth_79), 
+    #changes transparency, like alpha in ggplot
+    fillOpacity = 0.7, 
+    #how much to simplify the plot when zooming:
+    smoothFactor = 0.5, 
+    #changes what happens to the shape when we mouse over it
+    highlight = highlightOptions(weight = 5, 
+                                 color = "black",
+                                 fillOpacity = 0.9,
+                                 bringToFront = FALSE)) %>%
+  addCircles(data = nc_centroid,
+             lng = ~centr_long, 
+             lat =  ~centr_lat, 
+             # label that appears when you click on the marker,
+             # in this case county name and sid_per_1000birth_79
+             # rounded to the 2nd decimal
+             popup = ~paste(NAME,": ",
+                            round(sid_per_1000birth_79, 2),
+                            sep=""),
+             radius = 2) %>% 
+  
+  # Add a legend
+  addLegend(pal = pal, 
+            values = ~sid_per_1000birth_79, 
+            opacity = 0.5, 
+            title = NULL,
+            position = "bottomright") 
+```
+
+
+## Additional Resources
+
+* [Prof. Lisa Lendway's introductory video](https://www.youtube.com/embed/w5U62wUki3E)   
+* [Prof. Lisa Lendway's demo video](https://www.youtube.com/embed/U07OQ3V-W2k)
+* [Detailed `leaflet` documenation](https://rstudio.github.io/leaflet/) (with examples)
+* [`leaflet` cheat sheet](https://ugoproto.github.io/ugo_r_doc/pdf/leaflet-cheat-sheet.pdf)
+* [Provider map previews](http://leaflet-extras.github.io/leaflet-providers/preview/)
+* [Tutorial](https://learn.r-journalism.com/en/mapping/census_maps/census-maps/) by Andrew Ba Tran, investigative data reporter at Washington Post
+
+
+## Practice
+
+```{exercise}
+   
+In this exercise, you are going to create a single map of some of your favorite places! The end result will be one map.    
+
+a. Using the `tibble()` function, create a data set  that has 10-15 rows of your favorite places. The columns will be the name of the location, the latitude, the longitude, and a column that indicates if it is in your top 3 favorite locations or not. 
+
+b. Create a map that uses circles to indicate your favorite places. Label them with the name of the place. Choose the base map you like best. Color your 3 favorite places differently than the ones that are not in your top 3. Add a legend that explains what the colors mean.   
+
+c. If there are other variables you want to add that could enhance your plot, do that now. You could also connect all your locations together with a line in a meaningful way (you may need to order them differently in the original data).    
+
+```
+
+```{r}
+# a)
+library(tibble)
+my_fav_places <- tibble(
+  location=c("Trader Joes", "Pike Place Market", "Daiso", "TJ Maxx", "Valley Fair", "Phuoc Loc Tho", "Olin College Library", "Jewett Arts Center", "Savers Norwood", "In n Out Burgers"), 
+  latitude = c(42.29261797804049, 47.609481277175135, 37.417529768271876, 42.312906100757786, 37.32556989334013, 33.744360763134864, 42.29275632362008, 42.29375468822277, 42.192342677623, 37.426847108020986), 
+  longitude = c(-71.23477535799584, -122.34181744324178, -121.89818073172832, -71.21307894634408, -121.94545572803636, -117.96866077418579, -71.26446366169117, -71.30668216037616,  -71.18276836038022, -121.9224232235422), 
+  top_three=c("no", "yes", "yes", "yes", "no", "no", "no", "no", "no", "no"))
+
+# b) source used for custom marker colors: <https://stackoverflow.com/questions/69363293/how-to-set-marker-color-according-to-a-column-in-leaflet-r> 
+pal <- colorFactor("viridis", domain = my_fav_places$top_three) # colorFactor for categorical variables
+
+leaflet(data = my_fav_places) %>%
+  addTiles()%>%
+  addCircles(lng = ~my_fav_places$longitude,
+             lat = ~my_fav_places$latitude,
+             label = ~my_fav_places$location, 
+             weight = 10, 
+             opacity = 1,
+             color = ifelse(my_fav_places$top_three == "yes",col2hex("yellow"),col2hex("purple"))
+             ) %>%
+  addLegend(pal = pal, 
+            values = ~top_three, 
+            opacity = 0.5, 
+            title = "Top Three Favorite",
+            position = "bottomright") 
+
+```

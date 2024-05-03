@@ -1,0 +1,67 @@
+---
+title: "First_Markdown"
+author: "Madie Tong"
+date: "2024-01-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Learning Goals and Interests 
+
+## Graphic
+![A graphic depicting the varying percentage of classes that contribute the most to carbon emissions growth.](datagraphic1.png)
+<https://www.fastcompany.com/90693644/these-6-charts-explain-the-concept-of-climate-justice>
+
+## Links to Sustainability-related data sets
+1. <https://catalog.data.gov/dataset/human-well-being-index-hwbi-for-u-s-counties-2000-20101>
+2. <https://www.earthdata.nasa.gov/learn/environmental-justice-data-catalog>
+
+## Learning Objectives from Engineering for One Planet Framework
+
+* "Apply relevant concepts from required disciplines to the study of real-world problems
+and their solutions with empathic and ethical consideration for communities/societies,
+environmental justice, and cultural awareness."
+* "Examine data about environmental issues (e.g., climate change, energy and water use, scarcity and
+pollution, air quality, waste management, toxicity, etc.) including consideration for past/current/
+future and local/regional/global impacts"
+* " Describe how engineering activities directly and indirectly cause positive and negative social/
+cultural impacts throughout the design life-cycle, both to workers producing the products (i.e.,
+labor practices, livelihood, health, etc.) and to communities, society, and non-human life (i.e.,
+resources acquisition, waste production and management, traditional/cultural methodologies, etc.)."
+
+
+## Sustainability-related Questions 
+* I'm curious what measures are being taken now on a government/higher level that is aimed at funneling more resources into impoverished communities who are unequitably affected by exposure to hazardous materials, polluted air, etc?
+* What are ways that data can be used effectively in pushing for change in environmental injustice?
+* What are roles that data scientists take that are more climate-minded versus what other data scientists take? How may skills differ? 
+
+# Exercise 3.2 Data
+a)
+```{r}
+# load package 
+library(lterdatasampler)
+
+# load data 
+data("ntl_icecover")
+
+# assign data to new variable 
+ntl <- ntl_icecover
+```
+
+b) There are 334 units of observation, noting the year and duration of ice sticking in various lakes
+ 
+```{r}
+# c) First 12 rows of data
+head(ntl,12)
+
+# d) List of all variable names
+names(ntl)
+# e) Class of lakeid and ice_off variables
+class(ntl$lakeid)
+class(ntl$ice_off)
+# f) All unique entries of lakeid variable
+levels(ntl$lakeid)
+```

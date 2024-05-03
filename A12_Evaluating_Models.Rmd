@@ -1,0 +1,818 @@
+---
+title: "Data Science With an Eye Towards Sustainability <br> A12: Evaluating Statistical Models"
+author: "Madie Tong"
+output: 
+  bookdown::html_document2:
+    toc: true
+    toc_float: true
+    toc_depth: 4
+
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(gridExtra)
+library(choroplethr)
+library(choroplethrMaps)
+library(RColorBrewer)
+library(DT)
+library(dslabs)
+library(mosaic)
+knitr::opts_chunk$set(tidy = FALSE, message=FALSE, warning=FALSE)
+options(htmltools.dir.version = FALSE)
+```
+
+# Data Context
+
+Bike sharing is becoming a more popular means of transportation in many cities. The dataset we will analyze in this assignment comes from Capital Bikeshare, the bike-sharing service for the Washington DC area. The dataset originally comes from the [UCI Machine Learning Repository](https://archive.ics.uci.edu/ml/datasets/Bike+Sharing+Dataset). We load it here:
+```{r}
+bikes<-read_csv("http://faculty.olin.edu/dshuman/DS/bike_share.csv")
+bikes$day_of_week<-factor(bikes$day_of_week,levels=c("Sat","Sun","Mon","Tue","Wed","Thu","Fri"))
+bikes$year<-factor(bikes$year)
+bikes<-bikes%>%
+  mutate(isHot=ifelse(temp_feel>=90,"yes","no"))%>%
+  mutate(day_of_year=lubridate::yday(date))
+```
+
+**Our research goal** is to understand what factors are related to total number of riders on a given day so that you can help Capital Bikeshare plan its services.
+
+**Codebook**
+
+The variables and their meanings are listed below:
+
+- **`date`** : Date in format YYYY-MM-DD
+- **`season`** : Season (winter, spring, summer, or fall)
+- **`year`** : 2011 or 2012
+- **`month`** : 3-letter month abbreviation
+- **`day_of_week`** : 3-letter abbreviation for day of week
+- **`weekend`**: TRUE if the case is a weekend, FALSE if the case is a weekday
+- **`holiday`** : Is the day a holiday? (yes or no)
+- **`temp_actual`** : Actual temperature in degrees Fahrenheit
+- **`temp_feel`** : What the temperature feels like in degrees Fahrenheit
+- **`humidity`** : Fraction from 0 to 1 giving the humidity level
+- **`windspeed`** : Wind speed in miles per hour
+- **`weather_cat`** : Weather category. 3 possible values (categ1, categ2, categ3)
+    - **`categ1`**: Clear, Few clouds, Partly cloudy, Partly cloudy
+    - **`categ2`**: Mist + Cloudy, Mist + Broken clouds, Mist + Few clouds, Mist
+    - **`categ3`**: Light Snow, Light Rain + Thunderstorm + Scattered clouds, Light Rain + Scattered clouds
+- **`riders_casual`**: Count of daily rides by casual users (non-registered users)
+- **`riders_registered`**: Count of daily rides by registered users
+- **`riders_total`** : Count of total daily rides (riders_casual + riders_registered)
+
+\
+
+# Controlling for Covariates
+
+Let's explore the relationship between day of the week and number of *registered* riders.
+
+```{exercise}
+   
+a. Before looking at any data, write down a guess for the ranking of days, from busiest to least busy in terms of registered riders.  
+
+b. Make a visualization to explore this relationship. How accurate was your guess?
+  
+  c. Fit the model `riders_registered` ~ 1 + `day_of_week`, and interpret all model coefficients.    
+d. How does the expected number of registered riders on Monday compare to that on other weekdays? Any guesses why?
+  
+```
+```{r}
+# a) Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday
+
+# b) 
+bikes_reg <-
+  bikes %>%
+  select(day_of_week, riders_registered) %>%
+  group_by(day_of_week) %>%
+  summarise(total=sum(riders_registered)) # for future me, this line of code works too: aggregate(riders_registered ~ day_of_week, sum) # sum function applied to over riders by day of week
+
+ggplot(bikes, aes(x=day_of_week, y = riders_registered))+
+  geom_col()
+# my guess was not completely accurate, other than for the weekend. It turns out Thursdays is the most popular day, with wednesday and Tuesday being close seconds. I'm not sure how to explain the reasoning for Thursday being the most popular day, but the difference between the number of registered riders using during the week seems almost negligible. To some extent, it makes sense that Monday might not be as popular as there are many holidays that land on a Monday and additionally, some people take Mondays off. 
+
+# c) 
+modRegDay <- lm(riders_registered ~ 1 + day_of_week, data=bikes)
+modRegDay$coefficients
+# The model itself is interpreting how day of week affects the number of registered riders. The intercept represents an average of registered riders, while each coefficient for a corresponding day of week represents how much less or more registered riders are averaged on that day. Immediately, Sunday stands out since it is the only day of the week with a negative value, meaning that Sunday has an average of less riders compared to other days of the week. 
+
+# d) The number of riders on Monday is less than the other weekdays by at least ~300 riders. This may be because there are a lot of holidays that fall on a Monday, or that Monday, being the day after the weekend, may be a day often taken off from work by those who do not have to come in everyday. 
+```
+
+
+When exploring the relationship between response $y$ and predictor $x$, there are typically covariates for which we want to control.
+
+```{exercise}
+   
+a. Control for holidays by fitting the model `riders_registered` ~ 1 + `day_of_week` + `holiday`.   
+b. How did each of the coefficients for `day_of_week` change from your original model? Can you explain why?   
+  c. Make a side-by-side boxplot with `day_of_week` on the x-axis and two box plots for each day: one for holidays and one for non-holidays. Relate this graphic back to the changes you saw in the model coefficients.  
+d. What other variables might we want to control for when examining the relationship between `riders_registered` and `day_of_week`?   
+
+```
+```{r}
+# a)
+modReg_day_holi <- lm(riders_registered ~ 1 + day_of_week + holiday, data=bikes) # holiday is covariate to account for 
+# b)
+modReg_day_holi$coefficients
+# when controlling for holiday, we see that the coefficients for each day generally go up, other than Sunday which stays the same. Each amount varies. As I predicted, Monday has a lot of holidays so the value increased by ~200 from the previous model. The reason why the values changed when accounting for holiday is because BLAH BLAH 
+
+# c)
+ggplot(bikes, aes(day_of_week, holiday))+
+  geom_boxplot()  # HELP 
+
+# d) Season is a good variable to account for, since riders may not ride as much during summer or winter months. 
+```
+
+
+\
+
+# Model Evaluation
+
+One of the most famous quotes in statistics is the following from George Box (1919--2013):
+
+> "All models are wrong, but some are useful."
+
+Thus far, we've constructed models from sample data and used these to tell stories about the relationships among variables of interest.  We haven't yet discussed the *quality* of these models. To this end, it's important to ask the following.
+
+
+\
+
+
+
+> **Model evaluation questions**
+>
+> - How **fair** is our model? Are our model building process and application ethical? Biased? What are the societal impacts of this analysis?    
+> - How **strong** is our model? How well does it explain the variability in the response? 
+> - How **wrong** is our model? Are our model assumptions reasonable?   
+> - How **accurate** are our model's predictions?
+
+
+\
+
+
+Though these questions are broadly applicable across all machine learning techniques, we'll examine these questions in the linear regression context. Let $y$ be a response variable with a set of $k$ predictors $(x_{1}, x_{2}, ..., x_{k})$.  Then the population linear regression model is 
+
+$$y = \beta_0 + \beta_1 x_{1} + \beta_2 x_{2} + \cdots + \beta_k x_{k} + \varepsilon$$
+
+where 
+
+- $\beta_0 + \beta_1 x_{1} + \beta_2 x_{2} + \cdots + \beta_k x_{k}$ captures the trend of the relationship
+
+- $\epsilon$ reflects individual deviation from the trend (residual)
+
+
+
+\
+
+
+## How FAIR is our model?  
+
+It's critical to ask whether our model is _fair_:
+
+- Who collected the data / who funded the data collection?
+- How did they collect the data?
+- Why did they collect the data?
+- What are the implications of the analysis on individuals and society?
+
+Examples of _unfair_ models (or "algorithms") unfortunately abound:
+
+- [Amazon's resume filter discriminated against women applicants](https://www.bbc.com/news/technology-45809919)
+- [Facial recognition models, increasingly being used in police surveillance, are more likely to misidentify non-white subjects](https://www.nytimes.com/2019/07/08/us/detroit-facial-recognition-cameras.html)
+- [ICEs algorithm disproportionately recommended detention](https://slate.com/technology/2020/03/ice-lawsuit-hijacked-algorithm.html)
+
+\
+
+## How STRONG is our model?
+
+Building models is about **explaining variation**. It turns out that we can measure **how good a model is** (model quality) by measuring **how much variation it explains**. 
+
+
+### Partitioning variability
+
+Consider the model `riders_total ~ 1 + temp_feel`: 
+
+```{r}
+modA<-lm(data=bikes,riders_total~1+temp_feel)
+```
+
+The variance of the fitted values and the variance of the residuals sum to the variance of the observed response values:
+
+$$\text{Var(fitted) + Var(residuals) = Var(response)}$$
+
+```{r}
+(varFitted<-var(modA$fitted.values))
+(varResid<-var(resid(modA)))
+varFitted+varResid
+var(bikes$riders_total)
+```
+
+This is in fact always true for linear regression models!
+
+Further, the better the model, the greater Var(fitted). Putting this together, the $R^2$ measure of model quality compares Var(fitted) to Var(response):
+
+$$R^2 = \frac{\text{variance of fitted values}}{\text{variance of observed response values}}$$
+
+> **More About $R^2$ ("Multiple R-Squared")**
+>   
+> - $0 \leq R^2 \leq 1$     
+> - We can interpret $R^2$ as the *proportion of the variability in the observed response values that's explained by the model* (variance of fitted values). Thus $1 - R^2$ is the *proportion of the variability in the observed response values that's left UNexplained by the model* 
+> - Good models "explain away" lots of variation in the response. With a good model, the amount of response variation that is UNexplained should be low - good models explain why responses are different (vary)      
+> - High $R^2$ means that the model explained a lot (high variance of fitted values) and that the model left little UNexplained (low variance of residuals)
+> - Thus, the closer $R^2$ is to 1, the better the model. However, below we will discuss caveats when we look at models with many predictors  
+
+### Relationship to correlation coefficient
+
+If there is just a single quantitative explanatory variable, then $R^2$ is equal to the square of the correlation coefficient, $R$.
+
+```{r echo=FALSE, fig.height=6}
+set.seed(2000)
+x <- rnorm(100)
+y1 <- x + rnorm(100, sd = 2.8)
+y2 <- x + rnorm(100, sd = 1.8)
+y3 <- x + rnorm(100, sd = 0.8)
+y4 <- x + rnorm(100, sd = 0.2)
+g1 <- ggplot(NULL, aes(x = x, y = y1)) + geom_point() + labs(title=paste("R-squared = ", round(cor(x,y1)^2,2))) + theme_minimal()
+g2 <- ggplot(NULL, aes(x = x,y = y2)) + geom_point() + labs(title=paste("R-squared = ", round(cor(x,y2)^2,2))) + theme_minimal()
+g3 <- ggplot(NULL, aes(x = x,y = y3)) + geom_point() + labs(title=paste("R-squared = ", round(cor(x,y3)^2,2))) + theme_minimal()
+g4 <- ggplot(NULL, aes(x = x,y = y4)) + geom_point() + labs(title=paste("R-squared = ", round(cor(x,y4)^2,2))) + theme_minimal()
+
+grid.arrange(g1, g2, g3, g4, ncol = 2)
+```
+
+
+
+
+### Nested models and adjusted $R^2$
+
+So, in our explorations of multivariate models, we’ve discussed how:
+
+- adding more predictors to a model might help us better explain the response;
+- adding more predictors to a model lets us control for important covariates;
+- adding more predictors to a model impacts our interpretation of the model coefficients.
+
+There are also limitations to indiscriminately adding more predictors to our model!
+
+Consider the following series of **nested models**:
+
+**Model A:** `riders_total` ~ 1 + `temp_feel`
+
+**Model B:** `riders_total` ~ 1 + `temp_feel` + `season`
+
+**Model C:** `riders_total` ~ 1 + `temp_feel` + `season` + `season:temp_feel`
+
+**Model D:** `riders_total` ~ 1 + `temp_feel` + `season` + `season:temp_feel` + `weekend`
+
+**Model E:** `riders_total` ~ 1 + `temp_feel`
++ `season` + `season:temp_feel` + `weekend` + `windspeed` 
+
+How much of the variation in `riders_total` does each of the five models explain? Let's check the multiple $R^2$ coefficients. To find each one, we use the `summary` command:
+
+```{r}
+modA<-lm(data=bikes,riders_total~1+temp_feel)
+summary(modA)
+```
+
+Here is a table of $R^2$ values:
+
+         $R^2$
+-----    ------
+Model A  0.3982
+Model B  0.4545
+Model C  0.4841
+Model D  0.4842
+Model E  0.4927
+
+```{exercise}
+Based on these $R^2$ values, which variables might you decide to include in your model?
+  
+  Based on these $R^2$, Model E has the highest value and therefore means that by R^2 as a measure of quality, model E with the extra variable windspeed would want to be included. 
+```
+
+<br>
+
+- As expected, the more variables we add, the more variation we can explain (it is mathematically guaranteed that the $R^2$ cannot decrease for a nested model like this)
+
+- Many statisticians argue that $R^2$ is therefore not a good measure of fit for a model
+
+- An alternative is the adjusted $R^2$ measure:
+
+$$ \overline{R^2} = R^2-(1-R^2)*\frac{p}{n-p-1}, $$
+
+where $n$ is the number of cases in the data frame, and $p$ is the number of explanatory variables (not including the intercept)
+
+- $\overline{R^2}$ is never bigger than $R^2$, and can be negative
+
+- Slightly different interpretation than $R^2$: rather than using it as a measure of fit for the model (how $R^2$ is used), it is more commonly used as a comparative tool when evaluating different nested models (i.e., when trying to decide whether to add another explanatory variable to the model)
+
+Let's append our table with the adjusted $R^2$ values (also found by `summary`):
+
+         $R^2$  Adj. $R^2$
+-----    ------ -------
+Model A  0.3982 0.3974
+Model B  0.4545 0.4515
+Model C  0.4841 0.4791
+Model D  0.4842 0.4785
+Model E  0.4927 0.4864
+
+The fact that the adjusted $R^2$ goes down from Model C to Model D suggests that we might not need to include the `weekend` variable in our model. Excluding it yields the following model:
+
+```{r}
+modF<-lm(data=bikes,riders_total~1+temp_feel+season+temp_feel:season+windspeed)
+summary(modF)
+```
+
+
+
+### Redundancy
+
+Let's add a new column to the data set that has the perceived temperature in Celcius instead of Farenheit:
+
+```{r}
+bikes<-bikes%>%
+  mutate(temp_feel_c=(temp_feel-32)*5/9)
+```
+
+Here is the `riders_total` data plotted against temperatures in both scales:
+
+```{r,echo=FALSE}
+p1<-ggplot(bikes,aes(x=temp_feel,y=riders_total))+geom_point()+xlim(c(0,110))
+p2<-ggplot(bikes,aes(x=temp_feel_c,y=riders_total))+geom_point()+xlim(c(0,110))
+grid.arrange(p1,p2,ncol=1)
+```
+
+```{exercise}
+   
+a) Discuss with your group which of the following three models will yield the highest $R^2$ level:  
+Since all three models are conveying the same information on a different scale, the R^2 values may be incredibly similar, if not the same. 
+```
+
+
+**Model 1:** `riders_total` ~ 1 + `temp_feel`
+
+**Model 2:** `riders_total` ~ 1 + `temp_feel_c`
+
+**Model 3:** `riders_total` ~ 1 + `temp_feel` + `temp_feel_c`
+
+\noindent b. Try it out in `R`. How do the $R^2$ values compare?   
+c. Interpret the model coefficients for each model, and explain what is going on with these models.
+  
+```{r}
+# b)
+
+mod1 <- lm(riders_total~1+temp_feel, data=bikes)
+mod2 <- lm(riders_total~1+temp_feel_c, data=bikes)
+mod3 <- lm(riders_total~1+temp_feel+temp_feel_c, data=bikes)
+
+summary(mod1) # 0.3982
+summary(mod2) # 0.3892
+summary(mod3) # 0.3982
+
+# c) 
+mod1$coefficients
+mod2$coefficients
+mod3$coefficients
+# For mod1 (fahrenheit), the intercept is large since the datapoints are further apart from each other on the x-axis, thereby meaning the slope is also somewhat smaller. For mod2, however, the datapoints are closer to the y-axis and are overall closer together because of the celsius scale. That makes the slope steeper, but the intercept is smaller since it is so close to the y-axis. 
+```
+
+### Multicollinearity
+
+Consider the following three models:
+
+```{r}
+model_temp_a <- lm(riders_total ~ temp_actual, data = bikes)
+model_temp_a$coefficients
+model_temp_f <- lm(riders_total ~ temp_feel, data = bikes)
+model_temp_f$coefficients
+model_temp_af <- lm(riders_total ~ temp_actual + temp_feel, data = bikes)
+model_temp_af$coefficients
+```
+    
+```{exercise}
+   
+a. Brainstorm with your group why the coefficients for `temp_feel` and `temp_actual` in `model_temp_af` change so much from the single predictor models `model_temp_a` and `model_temp_f`.   
+b. Which model(s) (of the 3 above) provide interpretable coefficients / information?
+  
+  # with categorical covariates, we calculate a generalized line/slope that applies to all, but change the y-int w each category. For continuous 
+  
+  a) in the new model with actual/feel, both variables are continuous variables. This means that when we compute the model, we have to find the relationship between temp_actual and riders while also accounting for the temp_feel, which is continuous and therefore not as simple as changing the y-intercept if it were categorical. With two continuous variables, the line is no longer just on two axes (for rider and explanatory variable). 
+
+  b) I think the first two models have interpretable coefficients since they are both on a 2-axis plane. Since the third model crosses into the 3rd dimension, it is difficult to interpret the line on just a 2-axis plot. 
+```
+
+
+## How WRONG is our model?
+
+The next question we want to ask is: Does our model meet the model assumptions?    
+
+
+Examine the relationship between `temp_feel` and `riders_total`:
+
+```{r,echo=FALSE,fig.width=6,fig.height=4}
+ggplot(bikes,aes(x=temp_feel,y=riders_total))+
+  geom_point()+
+  geom_smooth(method="lm",se=FALSE)
+```
+
+A single line may not be the correct model, as bikers may be less inclined to ride once the temperature reaches a certain level. Instead, we can try fitting a curve, such as a quadratic function.
+
+
+### Side note on transformation terms
+
+When the relationship between two variables does not appear to be linear based on visualizations or known physical models, it may be appropriate to add ***transformation terms*** to statistical models. These may include, e.g., polynomial terms, exponential, logarithmic, ratios, and others. We discuss only polynomials here as an example.
+
+Note the use of `poly(x,2)` for a quadratic function of the variable `x`:
+
+```{r,fig.width=6,fig.height=4}
+ggplot(bikes,aes(x=temp_feel,y=riders_total))+
+  geom_point()+
+  geom_smooth(method="lm",formula=y~poly(x,2),se=FALSE)
+```
+
+```{r}
+modPoly2<-lm(data=bikes,riders_total~poly(temp_feel,2,raw=TRUE))
+modPoly2$coefficients
+```
+
+The curve given by this model is
+```
+-12331.1+383.0*`temp_feel`-2.0*`temp_feel`^2
+```
+
+We could also try a cubic function:
+
+```{r,fig.width=6,fig.height=4}
+ggplot(bikes,aes(x=temp_feel,y=riders_total))+
+  geom_point()+
+  geom_smooth(method="lm",formula=y~poly(x,3),se=FALSE)
+```
+
+**Important Warning**: Although tempting, it is rarely a good idea to include very high order polynomial terms in a statistical model like this. That is because the extra degrees of freedom often result in overfitting the model to the sample data.
+
+Here is an example of overfitting:
+```{r,fig.width=6,fig.height=4}
+ggplot(bikes,aes(x=temp_feel,y=riders_total))+
+  geom_point()+
+  geom_smooth(method="lm",formula=y~poly(x,20),se=FALSE)
+```
+
+**Important Note**: The models above include terms that are non-linear in the explanatory variable `temp_feel`; however, they are still *linear* models (created with `lm()`), as the model is a linear combination of the explanatory vectors.
+
+
+
+### Linear regression assumptions & residual analysis
+
+Now let's return to the main question of how wrong is our model. Is there a more formal method to capture our intuition that the first straight line model above does not represent the trend of the data? To answer that, we first need to review the assumptions behind linear regression models.
+
+Recall our population linear regression model:
+
+$$y = \beta_0 + \beta_1 x_{1} + \beta_2 x_{2} + \cdots + \beta_k x_{k} + \varepsilon.$$
+
+
+In "ordinary" least squares regression, there are two key assumptions:
+
+- **Assumption 1:**    
+    The observations of ($y,x_1,x_2,...,x_k$) for any case are independent of the observations for any other case.
+    
+
+<br>
+
+- **Assumption 2:**    
+    At any set of predictor values $(x_{1}^*, x_{2}^*, \ldots, x_{k}^*)$,    
+    $$\varepsilon \sim N(0,\sigma^2)$$ That is:    
+    a. the expected value of the residuals is $E(\varepsilon) =0$    
+        In words: Across the entire model, responses are balanced above and below the trend. Thus, the model accurately describes the "shape" and "location" of the trend.    
+        
+    b. *homoskedasticity*: the variance of the residuals $Var(\varepsilon) = \sigma^2$    
+        In words: Across the entire model, variability from the trend is roughly constant.        
+        
+    c. the $\varepsilon$ are *normally distributed*    
+        In words: individual responses are normally distributed around the trend (closer to the trend and then tapering off)
+
+
+
+### Checking the model assumptions
+
+Let's build some intuition for these assumptions.   
+
+```{exercise}
+Come up with some examples that violate Assumption 1.
+
+Perhaps if the x-value was some sort of timestep or tied to a timestep in any way, then that would indicate the action from the timestep after (the next case) would be affected by the previous case. 
+```
+
+
+```{example}
+For the plots below, indicate which parts of Assumption 2 hold.  
+
+plot 2 appears to hold assumption 2 the best. The model seesm the accurately depict the trend, since the data points are relatively balanced above and below the line. Additionally, the residual values for each data point above and below is somewhat constant. Finally, the data points are well clustered around the trend with the data points gradually feathering out and away from the line. 
+```
+   
+```{r echo=FALSE, fig.width=12, fig.height=3.5}
+set.seed(2019)
+x = rnorm(100, mean=10, sd=2)
+y = exp(x/1.5)  + rnorm(100,sd=500)
+z = 5*x+2 + rnorm(100,sd=5)
+u = 50*x + 2 + rnorm(100, sd=(x^3))
+dat1 <- data.frame(x,y,z,u)
+g1 <- ggplot(dat1, aes(x=x,y=y)) + geom_smooth(method="lm", se=FALSE) + geom_point()
+g2 <- ggplot(dat1, aes(x=x,y=z)) + geom_smooth(method="lm", se=FALSE) + geom_point()
+g3 <- ggplot(dat1, aes(x=x,y=u)) + geom_smooth(method="lm", se=FALSE) + geom_point()
+grid.arrange(g1,g2,g3,ncol=3)
+```
+    
+
+
+```{solution}
+We quickly lose the ability to visualize a model as the number of predictors increases.  Instead of checking the assumptions by eye, we can construct **residual plots**.  
+   
+```
+
+<br>
+
+```{r}
+# compute all residuals for each model
+yMod<-lm(y~x,dat1)
+zMod<-lm(z~x,dat1)
+uMod<-lm(u~x,dat1)
+
+dat1$yRes<-yMod$residuals
+dat1$zRes<-zMod$residuals
+dat1$uRes<-uMod$residuals
+
+```
+
+
+There are two key plots we want to examine:
+
+* predicted values vs. residuals
+* Q-Q plot
+
+Here are the predicted values vs. residuals plots:
+```{r fig.width=12, fig.height=3.5}
+dat1$yPredicted<-yMod$fitted.values
+dat1$zPredicted<-zMod$fitted.values
+dat1$uPredicted<-uMod$fitted.values
+ggg1 <- ggplot(dat1, aes(y=yRes, x=yPredicted)) + 
+    geom_point() + 
+    geom_hline(yintercept=0)
+ggg2 <- ggplot(dat1, aes(y=zRes, x=zPredicted)) + 
+    geom_point() + 
+    geom_hline(yintercept=0)
+ggg3 <- ggplot(dat1, aes(y=uRes, x=uPredicted)) + 
+    geom_point() + 
+    geom_hline(yintercept=0)
+grid.arrange(ggg1,ggg2,ggg3,ncol=3)
+```
+
+As for Assumption 2(a), note that for any least squares fitting, the sample mean of the residuals will be equal to 0:
+```{r}
+# compute means of residuals for each model
+mean(yMod$residuals)
+mean(zMod$residuals)
+mean(uMod$residuals)
+```
+what is the scaling for the predict v residuals?
+
+However, the expected value of the residuals may change with the values of the predictor variables. We can see this in the first of the three predicted values vs. residuals plots. At different predicted values (corresponding to different values of the single predictor in this case), the expected value of the residuals is different. For low and high values of `yPredicted`, the model underestimates the data, while for middle values, it overestimates the data. Said more simply, the model does not capture the trend of the data! We can often fix this by transforming the predictor variables and/or the response variables. In this case, for example, we could use a model of `log(y)~x`:
+
+```{r, fig.width=3.5, fig.height=3.5}
+ggplot(dat1, aes(x=x,y=log(y))) + geom_smooth(method="lm",se=FALSE) + geom_point()
+```
+
+Sticking with the same series of three predicted values vs. residuals plots, we see the third example ($u$) violates the homoskedasticity assumption (2b); as the predicted values increase, the variance of the residuals increases. **Generally speaking, if we see cone or banana shapes in these predicted-residual plots, one or more of the assumptions are not satisfied.**
+
+
+Next, we look at [quantile-quantile (Q-Q) plots](https://en.wikipedia.org/wiki/Q%E2%80%93Q_plot):
+```{r fig.width=12, fig.height=3.5}
+hhh1 <- ggplot(dat1, aes(sample=yRes)) + 
+    geom_qq()
+hhh2 <- ggplot(dat1, aes(sample=zRes)) + 
+    geom_qq()
+hhh3 <- ggplot(dat1, aes(sample=uRes)) + 
+    geom_qq()
+grid.arrange(hhh1,hhh2,hhh3,ncol=3)
+```  
+
+If you are interested in a deeper understanding of the math behind Q-Q plots, you can read more  [here](https://library.virginia.edu/data/articles/understanding-q-q-plots) or watch a tutorial video [here](https://www.youtube.com/watch?v=okjYjClSjOg). The key point in practice is that if the distribution of the residuals is normal, we expect to see the points cluster along the diagonal. The fact that the trend of the Q-Q plot is flatter than the diagonal for the first model means the distribution of the actual residuals is less dispersed than a normal distribution with the same mean and variance, violating the assumption that the residuals are normally distributed (2c).
+
+We can also see the violation of Assumption 2c by plotting the distributions of the residuals for each model, as compared to normal distributions with mean 0 and the same standard deviation as the residuals:
+
+```{r, fig.width=12, fig.height=3.5}
+# look at the distribution of residuals for each model
+h1 <- ggplot(dat1, aes(x=yRes)) +
+  geom_density(fill="blue",alpha=.8)+
+  stat_function(fun = dnorm, n = 101, args = list(mean = 0, sd = sd(dat1$yRes)),color="red")
+h2 <- ggplot(dat1, aes(x=zRes)) +
+  geom_density(fill="blue",alpha=.8)+
+  stat_function(fun = dnorm, n = 101, args = list(mean = 0, sd = sd(dat1$zRes)),color="red")
+h3 <- ggplot(dat1, aes(x=uRes)) + 
+  geom_density(fill="blue",alpha=.8)+
+  stat_function(fun = dnorm, n = 101, args = list(mean = 0, sd = sd(dat1$uRes)),color="red")
+grid.arrange(h1,h2,h3,ncol=3)
+
+```
+
+
+### Residual analysis summary
+
+<br>
+
+Assumption         |Consequence            |Diagnostic                         |Solution
+-------------------|-----------------------|-----------------------------------|----------------------------------------
+independence | inaccurate inference  |  common sense / context  | use a different modeling technique / specialized methods
+$E(\varepsilon)=0$  | lack of model fit | plot of residuals vs predictions  |  transform $x$ and/or $y$   
+$Var(\varepsilon)=\sigma^2$   |  inaccurate inference   |     plot of residuals vs predictions  |  transform $y$ (Box-Cox)
+normality of $\varepsilon$   |   if extreme, inaccurate inference  |    Q-Q plot   |     if extreme, transform $y$
+
+## How ACCURATE are our model's predictions?
+
+The model evaluation metrics we've examined thus far are focused on quantifying how much of the variance of the given response variable data is explained by the explanatory variables. If the intention is to use the model to make predictions of the response variable for new values of the explanatory variables, there are some additional important considerations that we won't explore further, but are covered in Machine Learning:
+
+- **Training** and **testing** our model using the same data can result in overly optimistic assessments of model quality.  For example, **in-sample** or **training errors** (i.e., error metrics calculated using the same data that we used to train the model) are often smaller than **testing errors** (i.e., error metrics calculated using data not used to train the model).        
+
+- Adding more and more predictors to a model might result in **overfitting** the model to the noise in our sample data. In turn, the model loses the bigger picture and does not generalize to new data outside our sample (i.e., it results in bad predictions).  
+
+- A common approach to avoid overfitting is **validation**. In practice, we only have one sample of data. We need to use this one sample to both train (build) and test (evaluate) our model. Validation a simple strategy where we randomly select a portion of the sample to *train* the model and then *test* the model on rest of the sample. In **cross-validation**, a commonly used form of validation, we do this split repeatedly with different training/test sets each time. Here is an example algorithm:   
+   
+
+> **$k$-Fold Cross Validation (CV)**
+>
+> 1. Divide the data into $k$ groups / folds of equal size
+> 2. Repeat the following procedures for each fold $j \in \{1,2,...,k\}$:
+>
+>       - Divide the data into a test set (fold $j$) & training set (the other $k-1$ folds)
+>       - Fit a model using the training set.
+>       - Use this model to predict the responses for the $n_j$ cases in fold $j$:
+>           $\hat{y}_1, ..., \hat{y}_{n_j}$
+>       - Calculate an error metric for fold $j$; for example, the mean squared error (MSE) is given by $$\text{MSE}_j = \frac{1}{n_j}\sum_{i=1}^{n_j} (y_i - \hat{y}_i)^2$$
+> 3. Calculate the "cross validation error", e.g., the average MSE from the $k$ folds: $$\text{CV}_{(k)} = \frac{1}{k} \sum_{j=1}^k \text{MSE}_j$$
+
+- The `caret` (**C**lassification **A**nd **RE**gression **T**raining) package in `R` is useful for training and testing models. Here are [excellent documentation](https://topepo.github.io/caret/index.html) and a [cheat sheat](https://rstudio.github.io/cheatsheets/caret.pdf)
+
+\
+
+
+# More Practice
+
+```{exercise}
+   
+Consider the following linear regression models:   
+a. `riders_total` ~ 1+`temp_feel`   
+b. `riders_total` ~ poly(`temp_feel`,3)   
+c. `riders_total` ~ 1 + `temp_feel` + `season` + `temp_feel:season`   
+d. `temp_feel` ~ poly(day_of_year,2)   
+e. `riders_registered` ~ 1 + `day_of_week` + `holiday`   
+f. `riders_registered` ~ 1 + `day_of_week` + `holiday` + `temp_feel`  
+
+For each of the six models, complete the following:   
+i. Make an appropriate visualiation of the data variables involved in the model.    
+ii. Make a plot of the predicted values vs. the residual values.   
+iii. Make a Q-Q plot of the residuals.  
+iv. Explain which of the linear regression model assumptions are met, and which are not. 
+
+For all of your plots with categorical data, it might be helpful to add color or shape aesthetics for the categorical variables.
+
+```
+```{r}
+# a)
+moda <- lm(riders_total ~ 1 + temp_feel, data=bikes)
+a1 <-ggplot(bikes, aes(x=temp_feel, y=riders_total))+
+        geom_point()+
+        geom_smooth(method="lm", formula=y~x, se=FALSE)
+
+aRes <- data.frame(Res = moda$residuals, Predicted = moda$fitted.values)
+a2 <- ggplot(aRes, aes(x=Predicted, y=Res)) +
+  geom_point()+
+  geom_hline(yintercept=0)+
+  labs(title="Model A: ~ 1 + temp_feel")
+
+a3 <- ggplot(aRes, aes(sample=Res))+
+  geom_qq()
+grid.arrange(a1, a2, a3, ncol=3)
+# This model is not necessarily distributed in a balanced way above and below the line, making it violate assumption 2a. 
+
+modb <-lm(riders_total ~ poly(temp_feel, 3), data=bikes)
+b1 <- ggplot(bikes, aes(x=temp_feel, y=riders_total))+
+  geom_point()+
+  geom_smooth(method="lm", formula=y~poly(x,3), se=FALSE)
+
+bRes <- data.frame(Res = modb$residuals, Predicted = modb$fitted.values)
+b2<- ggplot(bRes, aes(x=Predicted, y=Res)) +
+  geom_point()+
+  geom_hline(yintercept=0)+
+  labs(title="Model B: ~ 1 + temp_feel")
+
+b3 <- ggplot(bRes, aes(sample=Res))+
+  geom_qq()
+grid.arrange(b1, b2, b3, ncol=3)
+# This model violates assumption 2b since we can see from the residual plot that the variance is not constant throughout the trend. 
+
+# c)
+modc <- lm(riders_total ~ 1 + temp_feel + season + temp_feel:season, data=bikes)
+c1 <- ggplot(bikes, aes(x=temp_feel, y=riders_total))+
+  geom_point()+
+  geom_smooth(method="lm", formula=y~x, se=FALSE, aes(color=season))
+
+cRes <- data.frame(Res = modc$residuals, Predicted = modc$fitted.values)
+c2 <- ggplot(cRes, aes(x=Predicted, y=Res)) +
+  geom_point()+
+  geom_hline(yintercept=0)+
+  labs(title="Model C: ~ 1 + temp_feel")
+
+c3 <- ggplot(cRes, aes(sample=Res))+
+  geom_qq()
+grid.arrange(c1, c2, c3, ncol=3)
+# the funnel shape indicates for the residuals indicate that assumption 2b is violated. 
+
+modd <- lm(riders_total ~poly(day_of_year, 2), data=bikes)
+d1<- ggplot(bikes, aes(x=day_of_year, y=riders_total))+
+  geom_point()+
+  geom_smooth(method="lm", formula=y~poly(x,2), se=FALSE)
+
+dRes <- data.frame(Res = modd$residuals, Predicted = modd$fitted.values)
+d2 <- ggplot(dRes, aes(x=Predicted, y=Res)) +
+  geom_point()+
+  geom_hline(yintercept=0)+
+  labs(title="Model D: riders_total ~ poly(day_of_year, 2) ")
+
+d3 <- ggplot(dRes, aes(sample=Res))+
+  geom_qq()
+grid.arrange(d1, d2, d3, ncol=3)
+# this violates assumption 2b since we can see that the variability of the residuals in the residual plot is not constant. 
+
+modE <- lm(riders_registered ~ 1 + day_of_week + holiday, data=bikes)
+e1<-ggplot(bikes, aes(x=day_of_week, y=riders_total))+
+  geom_point()+
+  geom_smooth(method="lm", formula=y~x, se=FALSE, aes(color=holiday))
+
+ERes <- data.frame(Res = modE$residuals, Predicted = modE$fitted.values)
+e2<-ggplot(ERes, aes(x=Predicted, y=Res)) +
+  geom_point()+
+  geom_hline(yintercept=0)
+
+e3<-ggplot(ERes, aes(sample=Res))+
+  geom_qq()
+grid.arrange(e1, e2, e3, ncol=3)
+# Seeing the distribution around the residual plot, it appears that where there are data points, there is an even variability of residuals around the model, making it align with the assumption 2b. However, the far end of the qq plot is not clustered well along the diagonal, making it violate assumption 2c (to an extent, though this may be up for interpretation given the rest of the plot is clustered along the diagonal well).
+modf <- lm(riders_registered ~ day_of_week + holiday + temp_feel, data=bikes)
+
+ggplot(bikes, aes(x=temp_feel, y=riders_total))+
+  geom_point()+
+  geom_smooth(method="lm", formula=y~x, se=FALSE, aes(color=holiday, shape=day_of_week))
+
+fRes <- data.frame(Res = modf$residuals, Predicted = modf$fitted.values)
+ggplot(fRes, aes(x=Predicted, y=Res)) +
+  geom_point()+
+  geom_hline(yintercept=0)
+
+ggplot(fRes, aes(sample=Res))+
+  geom_qq()
+grid.arrange(e1, e2, e3, ncol=3)
+# from the residual plot, we can see that the data clusters unevenly in a cone-ish shape in the low end of the x-axis. therefore the plot is in violation of assumption 2b. 
+```
+
+```{exercise}
+In this exercise, you'll explore the relationship between a (quantitative) response variable of your choosing and a (quantitative or categorical) explanatory variable of your choosing. Choose a pair that hasn't yet been investigated in this activity.  
+
+a. Make a plot showing the relationship between the two variables you chose.    
+b. In understanding the relationship between these variables, what other variables might you want to control for (i.e., include as covariates)?   
+c. Build a model with your identified response variable and explanatory variable (initial choice and covariates).   
+d. What portion of the variation in the response variable is explained by your model?    
+e. How well are the assumptions of linear regression satisfied for your model?
+
+```
+```{r}
+# a)
+ggplot(bikes, aes(x=temp_feel, y=riders_casual)) +
+  geom_point()
+  # geom_smooth(method="lm", formula =y~x, se=FALSE)
+
+# b) The plot indicates that to some extent, there is a growing relationship between temperature feel and the number of casual riders, though the lines get fuzzy as the temperature increases. It might be useful to control for the categorical variables holiday or day of week since these are factors that may affect the hours that a casual and not regular rider may want to use a bike. Additionally, season may be valuable since it may indicate if there are more riders during certain months such as summer which many students have breaks on. 
+
+# c)
+modCas <- lm(riders_casual~ 1+ temp_feel, data=bikes)
+modCas$coefficients
+
+modCasCov <- lm(riders_casual~ 1 + temp_feel + day_of_week, data=bikes)
+
+# d)
+ggplot(bikes, aes(x = temp_feel, y=riders_casual))+
+  geom_point()+
+  geom_smooth(method="lm", formula = y~x, aes(color=day_of_week))
+
+casRes <-data.frame(Res = modCasCov$residuals, Predicted = modCasCov$fitted.values)
+
+ggplot(casRes, aes(x=Predicted, y=Res)) +
+  geom_point()+
+  geom_hline(yintercept=0)+
+  labs(title="Model: riders_casual ~ temp_feel  + day_of_week")
+
+ggplot(casRes, aes(sample=Res))+
+  geom_qq()
+# d) 
+summary(modCasCov)
+# Both the R^2 and adjusted R^2 are high values, closer to 1 than 0. This indicates that the model explains the variability well. 
+
+# e)
+# The assumptions aren't necessarily satisfied by the model. 
+# # as we can see from these plots, the model fails assumption 2b and c from the results of the residual plot and qq plot. From the residuals, we can see the variance of datapoints clustered around the trend is uneven and somewhat cone-shaped, and the qqplot reveals that the datapoints do not cluster around the diagonal and strays from it. 
+```

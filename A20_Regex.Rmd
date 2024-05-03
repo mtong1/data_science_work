@@ -1,0 +1,221 @@
+
+---
+title: "| Data Science With an Eye Towards Sustainability    \n| Activity A20: Wrangling with Regular Expressions\n"
+author: "Madie Tong"
+output:
+  bookdown::html_document2:
+    split_by: none
+    toc: no
+
+---
+```{r setup, include=FALSE}
+library(tidyverse)
+library(ggforce)
+library
+library(reshape2)
+knitr::opts_chunk$set(warning = FALSE, message=FALSE)
+```
+
+# Regular Expressions
+
+Additional reading and online video tutorial:  
+
+1. [String manipulation with `stringr` cheatsheet](https://rstudio.github.io/cheatsheets/strings.pdf)   
+2. [Strings](https://r4ds.had.co.nz/strings.html) by Wickham and Grolemund   
+3. [Regular expressions](https://mdsr-book.github.io/mdsr2e/ch-text.html#regular-expressions-using-macbeth) by Baumer, Kaplan, and Horton   
+4. [Regular expression tutorial](https://ryanstutorials.net/regular-expressions-tutorial/)  
+5. [regexr online tool](https://regexr.com/)
+6. [Regular expression interactive tutorial](https://regexone.com/)  
+7. [RegExplain RStudio addin](https://www.garrickadenbuie.com/project/regexplain/)
+
+Regular expressions allow us to describe character patterns. Regular expressions allow us to:^[Source: [regular expression tutorial](https://ryanstutorials.net/regular-expressions-tutorial/).]
+
+- **Search** for particular items within a large body of text. For example, you may wish to identify and extract all email addresses.
+- **Replace** particular items. For example, you may wish to clean up some poorly formatted HTML by replacing all uppercase tags with lowercase equivalents.
+- **Validate** input. For example, you may want to check that a password meets certain criteria such as, a mix of uppercase and lowercase, digits and punctuation.
+- **Coordinate** actions. For example, you may wish to process certain files in a directory, but only if they meet particular conditions.
+- **Reformat** text. For example, you may want to split strings into different parts, each to form new variables.
+- and more...
+
+**Start by doing this [interactive tutorial](https://regexone.com/).** Note that neither the tutorial nor regular expressions more generally are specific to `R`. Some of the syntax in the tutorial is slightly different from what we'll use in `R`, but it will still help you get acclimated to the main ideas of regular expressions.
+
+# Wrangling with Regular Expressions in `R`
+
+Now that we have some idea how regular expressions work, let's examine how to use them to achieve various tasks in `R`. It will be helpful to have your [cheat sheet](https://rstudio.github.io/cheatsheets/strings.pdf) handy. Many of these tasks can either be accomplished with functions from the `base` (built-in) package in `R` or from the `stringr` package, which is part of the Tidyverse. In general, the `stringr` functions are faster, which will be noticeable when processing a large amount of text data.
+
+```{r}
+example<-"The quick brown fox jumps over the lazy dog."
+example2<-"Two roads diverged in a yellow wood, / And sorry I could not travel both / And be one traveler, long I stood / And looked down one as far as I could"
+example3<-"This is a test"
+```
+
+## Search and replace patterns with `gsub` (`base`) or `str_replace` or `str_replace_all` (`stringr`)
+
+To search for a pattern and replace it, we can use the function `gsub`. Here are some examples:
+```{r}
+gsub("quick","really quick",example)
+gsub("fox|dog","****",example)
+gsub("(fox|dog).$","****",example) # at end of sentence only, "." for any character
+gsub("(fox|dog)\\.$","****",example) # at end of sentence only, "\\." only for a period
+gsub("the","a",example) # case-sensitive only matches one
+gsub("[Tt]he","a",example) # will match either t or T; could also make "a" conditional on capitalization of t
+```
+
+
+In the `stringr` package, `str_replace` only replaces the first matched pattern, while `str_replace_all` replaces all. Here is a repetition of a few of the examples from above:
+
+```{r}
+str_replace(example,"[Tt]he","a")
+str_replace_all(example,"[Tt]he","a")
+str_replace_all(example,"fox|dog","****")
+```
+
+## Detect patterns with `grep` and `grepl` (`base`) or `str_detect` (`stringr`)
+
+```{r}
+examples=c(example,example2,example3)
+pat<-"[^aeiouAEIOU ]{3}" # Regular expression for three straight consonants. Note that I've excluded spaces as well
+grepl(pat,examples) # Are there three consonants in a row?
+grep(pat,examples) # Which entries contain this pattern?
+str_detect(examples,pat) # same as grepl
+```
+
+## Locate patterns with `regexpr` or `str_locate`
+
+```{r}
+regexpr(pat,example) # starting position and lengh of first match
+str_locate(example,pat) # starting position and ending position of first match
+```
+
+Let's check the answer:
+```{r}
+substr(example,23,25)
+```
+
+## Extract patterns with `str_extract` and `str_extract_all`
+
+```{r}
+pat2<- "[^aeiouAEIOU ][aeiouAEIOU]{2}[^aeiouAEIOU ]{1}"# consonant followed by two vowels followed by a consonant
+str_extract(example2,pat2) # extract first match
+str_extract_all(example2,pat2,simplify=TRUE) # extract all matches
+```
+
+## Count the number of characters with `str_length`
+```{r}
+str_length(example2)
+```
+
+## Convert a string to all lower case letters with `str_to_lower`
+
+```{r}
+str_to_lower(example2)
+```
+
+## Split strings with `separate` 
+
+```{r}
+df<-tibble(ex=example2)
+df<-separate(df,ex,c("line1","line2","line3","line4"), sep=" / ")
+df$line1
+df$line2
+df$line3
+df$line4
+```
+
+
+Note: The function `separate` is in the `tidyr` package.
+
+# Practice: Vehicle Fuel Efficiency
+
+The U.S. Environmental Protection Agency publishes a [Green Vehicle Guide](https://www.fueleconomy.gov/feg/download.shtml) each year, with data on the fuel economy of different makes and models of vehicles. You can find the 2024 guide [here](https://www.fueleconomy.gov/feg/EPAGreenGuide/xls/all_alpha_24.xlsx) and the associated data dictionary [here](https://www.fueleconomy.gov/feg/EPAGreenGuide/GreenVehicleGuideDocumentation.pdf). For electric vehicles, the MPG data represent [miles per gallon gasoline equivalent](https://en.wikipedia.org/wiki/Miles_per_gallon_gasoline_equivalent). Let's load in the data:
+
+```{r}
+fuel_econ<-read_csv("http://faculty.olin.edu/dshuman/DS/all_alpha_24.csv")
+```
+
+Each row appears to be a unique combination of make/model and certification. Since the fuel economy data does not depend on the certification, let's filter to just include rows with the federal certifications:
+
+```{r}
+fuel_econ<-filter(fuel_econ,`Cert Region`=="FA")
+```
+\
+
+```{r,echo=FALSE}
+DT::datatable(fuel_econ)
+```
+
+\
+
+```{exercise,name="Wrangling practice with regular expressions"}
+a. Make a new column that has just the bin number at the end of the `Stnd Description` column.  
+b. Separate the transmission column `Trans` into two columns: the transmission type (before the hyphen) and the number of gears (after the hypen).
+c. Add a new column that has the longer name of the transmission type (e.g., "Semi-Automatic" instead of "SemiAuto"). You can find the longer names in data dictionary. Hint: What is an efficient way to do this task that you've known how to do for a while?
+d. Separate the `Model` column into two separate columns: one for the make (brand) and one for the model. Hints: 1. Make sure the new `Model` variable has the full name (e.g., "Integra A-Spec"). 2. As is often the case in data wrangling, there are a few exceptions to the first rule you might think of to do this.
+
+```
+```{r}
+# a)
+fuel_econ <-
+  fuel_econ %>%
+  mutate(bin_no = str_remove(`Stnd Description`, "Federal Tier 3 Bin"))
+# b)
+fuel_econ <- separate(fuel_econ, col=Trans, into = c("trans_type", "trans_no"), sep="-")
+
+# c)
+fuel_econ <- 
+  fuel_econ %>%
+  mutate(new_trans_name = case_when(trans_type == "SemiAuto" ~ "Semi-Automatic",
+                                    trans_type == "Man" ~ "Manual",
+                                    trans_type == "Auto" ~ "Automatic", 
+                                    trans_type == "SCV" ~ "Selectable Continuously Variable",
+                                    trans_type == "AutoMan" ~ "Automated Manual",
+                                    trans_type == "AMS" ~ "Automated Manual-Selectable", 
+                                    trans_type == "CVT" ~ "Continuously Variable",
+                                    trans_type == "CM3" ~ "Creeper/Manual 3-Speed",
+                                    trans_type == "CM4" ~ "Creeper/Manual 4-Speed", 
+                                    trans_type == "C4" ~ "Creeper/Manual 4-Speed",
+                                    trans_type == "C5" ~ "Creeper/Manual 5-Speed",
+                                    trans_type == "Auto-S2" ~ "Semi-Automatic 2-Speed",
+                                    trans_type == "Auto-S3" ~ "Semi-Automatic 3-Speed",
+                                    trans_type == "Auto-S4" ~ "Semi-Automatic 4-Speed",
+                                    trans_type == "Auto-S5" ~ "Semi-Automatic 5-Speed", 
+                                    trans_type == "Auto-S6" ~ "Semi-Automatic 6-Speed", 
+                                    trans_type == "Auto-S7" ~ "Semi-Automatic 7-Speed"))
+
+# d) 
+# fuel_econ <- 
+#   fuel_econ %>%
+  
+# str_detect(fuel_econ$Model, "[[:upper:]]")
+# str_extract_all(fuel_econ$Model, )
+rexp <- "^(\\w+)\\s?(.*)$"
+fuel_econ <- mutate(fuel_econ, new_col = sub(rexp,"\\1",Model), new_col2 = sub(rexp, "\\2", Model))
+
+# fuel_econ <- mutate(fuel_econ, if(Model == "LAND ROVER"){})
+```
+
+
+```{exercise}
+Now let's focus on hybrid and electric vehicles.
+
+a. Starting with your table from the previous exercise, make a new table that excludes vehicles that only have gasoline, diesel, or ethanol as fuel. How many hybrid models and how many electric vehicle models remain?   
+b. You'll see that the `City MPG`, `Hwy MPG`, and `Cmb MPG` variables are all character strings (not numeric), and that the hybrid vehicles have two numbers (gasoline/electricity) with a slash between them. For all three columns, delete the slash and everything before it so that you just have the MPGs for electricity. Then convert all three columns into numeric (double) format.   
+c. Make two different side-by-side violin or box plots, both with `Cmb MPG` as the dependent variable on the y-axis. For the first one, have the different violins/boxes along the x-axis correspond to the transmission type ("Automated Manual", "Automated Manual-Selectable", etc.). For the second plot, have the different violins/boxes along the x-axis correspond to the vehicle class ("small car", "large car", etc.). For each plot, you may want to sort the violions/boxes by the median combined MPG for that group, and you may want to do a further breakdown into different boxes/violins for different types of fuel sources.
+
+```
+```{r}
+# a)
+new_fuel_econ <-
+  fuel_econ %>%
+  filter(Fuel == c("Gasoline", "Ethanol","Diesel"))
+
+# b) 
+# tes_fuel_econ <-
+#   fuel_econ %>%
+#   mutate(if(str_detect(`City MPG`, "/")) {`City MPG` == gsub(".*/", "", `City MPG`)}
+#          else{`City MPG` == `City MPG`})
+
+
+# mutate(ifelse(str_detect(`City MPG`, "/"), gsub(".*/", "", `City MPG`), ))
+```
+

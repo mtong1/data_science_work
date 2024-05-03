@@ -1,0 +1,501 @@
+---
+title: "| Data Science With an Eye Towards Sustainability    \n| Activity A8: Joins\n"
+author: "Madie Tong"
+output:
+  bookdown::html_document2:
+    split_by: none
+    toc: no
+
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(ggmap)
+library(leaflet)
+library(ggthemes) 
+library(RColorBrewer)
+library(janitor)
+library(vembedr)
+knitr::opts_chunk$set(tidy = FALSE, message=FALSE, warning=FALSE)
+```
+
+# Bicycle Transportation
+
+Using a bike instead of a car for short trips reduces the carbon footprint of that trip by about 75% [[source]](https://ourworldindata.org/travel-carbon-footprint). Shared public systems help increase the use of bicycles for transportation. The United States Department of Transportation Bureau of Transportation Statistics (BTS) tracks bikeshare (docked and dockless) and E-scooter systems, and presents a nice summary of these micromobility systems at [this site](https://data.bts.gov/stories/s/fwcs-jprj). Here is their summary video:
+
+```{r,echo=FALSE}
+embed_url("https://www.youtube.com/watch?v=gzPtSqtI6IQ")
+```
+
+Let's focus on bikeshare systems and load in data on them from BTS:
+```{r,cache=TRUE}
+bikes_scooter<-read_csv("http://faculty.olin.edu/dshuman/DS/Bikeshare_Docked_and_Dockless_and_E-scooter_Systems_by_Year_and_City_Served.csv")%>%
+    janitor::clean_names()
+
+bikeshare<-bikes_scooter%>%
+  select(city,state,year,dock_ct)%>%
+  filter(dock_ct>0)%>%
+  arrange(city,state,year)
+```
+
+```{r, echo=FALSE}
+set.seed(101)
+knitr::kable(
+  sample_n(bikeshare,size=6),caption="A few random rows of the `bikeshare` table. Each row is a city-state-year triplet. The `dock_ct` variable gives the number of docked stations in the city."
+)
+```
+
+We also have a second table from [Wikipedia](https://en.wikipedia.org/wiki/List_of_United_States_cities_by_population) that has the population and land area for the 250 most populus cities in the United States, with all data from the 2020 Census:
+
+```{r}
+top_250_cities_by_pop<-read_csv("http://faculty.olin.edu/dshuman/DS/us_top_250_cities_by_population.csv")%>%
+  janitor::clean_names()%>%
+  select(city,state,pop_2020,area_sq_miles)
+```
+
+```{r, echo=FALSE}
+set.seed(101)
+knitr::kable(
+  sample_n(top_250_cities_by_pop,size=6),caption="A few random rows of the `top_250_cities_by_pop` table. Each row is a city-state pair, and the table includes the 250 most populus cities, according to the 2020 U.S. Census."
+)
+```
+
+\
+
+# Joining Two Data Frames
+
+Additional reading: 
+
+* [Wickham and Grolemund on relational data](http://r4ds.had.co.nz/relational-data.html) or 
+* [Baumer, Kaplan, and Horton on data wrangling with multiple tables](https://mdsr-book.github.io/mdsr2e/ch-join.html)
+
+A *join* is a data verb that combines two tables. 
+
+- These are called the *left* and the *right* tables.
+
+There are several kinds of join.
+
+* All involve establishing a correspondance --- a match --- between each case in the left table and zero or more cases in the right table.
+* The various joins differ in how they handle multiple matches or missing matches.
+
+## Establishing a match between cases
+
+A match between a case in the *left* table and a case in the *right* table is made based on the values in pairs of corresponding variables.
+
+* **You** specify which pairs to use.
+* A pair is a variable from the left table and a variable from the right table.
+* Cases must have *exactly equal* values in the left variable and right variable for a match to be made.
+
+As an example, we'll examine different ways to combine the `bikeshare` and `top_250_cities_by_pop` tables. 
+
+The very first question to ask is what variables the two tables have in common. In this case, it is the city and the state.
+
+## Mutating joins
+
+The first class of joins are mutating joins, which add new variables (columns) to the left data table from matching observations in the right table.^[There is also a `right_join()` that adds variables in the reverse direction from the left table to the right table, but we do not really need it as we can always switch the roles of the two tables.]
+
+The main difference in the three mutating join options in this class is how they answer the following questions:
+
+1. What happens when a case in the right table has no matches in the left table?
+2. What happens when a case in the left table has no matches in the right table?
+
+Three mutating join functions:
+
+- **`left_join()`**: the output has all cases from the left, regardless if there is a match in the right, but discards any cases in the right that do not have a match in the left.
+- **`inner_join()`**: the output has only the cases from the left with a match in the right.
+- **`full_join()`**: the output has all cases from the left and the right. This is less common than the first two join operators.
+
+When there are multiple matches in the right table for a particular case in the left table, all three of these mutating join operators produce a separate case in the new table for each of the matches from the right.
+
+One of the most common and useful mutating joins in one that **translates** levels of a variable to a new scale; e.g., a join that translates letter grades (e.g., "B") into grade points (e.g., 3) for a GPA calculuation.
+
+```{example name="left_join"}
+Let's mutate two new columns to the `bikeshare` table by pulling in the population and land area from the `top_250_cities_by_pop` table:
+
+```
+
+```{r}
+bikeshare2<-bikeshare%>%
+  left_join(top_250_cities_by_pop,by=c("state"="state","city"="city"))
+```
+
+```{r, echo=FALSE}
+set.seed(101)
+knitr::kable(
+  sample_n(bikeshare2,size=6),caption="Two additional columns added to the `bikeshare` table, pulling in data from the `top_250_cities_by_pop` table when the city is in the 250 most populus in the United States."
+)
+```
+
+A few notes:
+
+1. We need to match both city and state, to distinguish for example between Rochester, NY and Rochester, MN.
+
+1. In this case, the variable names we are matching happen to be the same, but they don't need to be. If the right table name was `ST`, we'd just change that part of the match to `"state"="ST"`.
+
+1. If the `by=` is omitted from a join, then `R` will perform a natural join, which matches the two tables by all variables they have in common. In this case, that would yield the same result (but you should be careful in general):
+
+```{r,message=TRUE}
+bikeshare2<-bikeshare%>%
+  left_join(top_250_cities_by_pop)
+```
+
+```{example, name="inner_join"}
+The `bikeshare2` table has a lot of rows corresponding to cities that aren't in the 250 most populus. and thus have NAs in the last two columns. If we want to create a table that only has information for cities that are in both tables, we can instead use `inner_join`: 
+
+```
+
+```{r}
+bikeshare3<-bikeshare%>%
+  inner_join(top_250_cities_by_pop,by=c("state"="state","city"="city"))
+```
+
+```{r, echo=FALSE}
+set.seed(101)
+knitr::kable(
+  sample_n(bikeshare3,size=6),caption="The `inner_join` only keeps cities that appear in both the `bikeshare` and `top_250_cities_by_pop` tables."
+)
+```
+
+
+## Filtering joins
+
+The second class of joins are filtering joins, which select specific cases from the left table based on whether they match an observation in the right table.
+
+- **`semi_join()`**: discards any cases in the left table that do not have a match in the right table. If there are multiple matches of right cases to a left case, it keeps just one copy of the left case.
+- **`anti_join()`**: discards any cases in the left table that have a match in the right table.
+
+A particularly common employment of these joins is to use a filtered summary as a comparison to select a subset of the original cases, as follows.
+
+```{example, name="semi_join to compare to a filtered summary"}
+
+Compute a subset of the `bikeshare` table that only contains rows from the top three most populus cities in the United States. 
+
+```
+
+```{solution}
+This is where we can use `semi_join` to filter the rows of `bikeshare`:
+  
+```
+
+```{r}
+top_three_populus<-top_250_cities_by_pop%>%
+  arrange(desc(pop_2020))%>%
+  head(n=3)
+bikeshare_in_populus_cities<-bikeshare%>%
+  semi_join(top_three_populus)
+```
+
+```{r, echo=FALSE}
+set.seed(101)
+knitr::kable(
+  bikeshare_in_populus_cities,caption="This `semi_join` only keeps rows for cities that are in the top three most populus."
+)
+```
+
+
+
+```{example, name="anti_join"}
+Which U.S. cities in the 250 most populus have no bikeshare program listed in the BTS data?
+
+```
+
+```{solution}
+While `semi_join` keeps rows of the left table that have a match in the right table, `anti_join` keeps rows that do not have a match:
+  
+```
+
+```{r}
+populus_cities_no_bike_scooter<-top_250_cities_by_pop%>%
+  anti_join(bikeshare)%>%
+  arrange(desc(pop_2020))
+```
+
+```{r, echo=FALSE}
+set.seed(101)
+knitr::kable(
+  populus_cities_no_bike_scooter[1:6,],caption="The `anti_join` only keeps cities in the left table (`top_250_cities_by_pop`) that do not appear in right table (`bikeshare`). These are the six most populus of the 172 cities that fall into this category."
+)
+```
+
+
+## More join practice
+
+Here is an additional table from [Wikipedia](https://en.wikipedia.org/wiki/List_of_United_States_cities_by_area) with the top 150 United States cities by land area:
+
+```{r}
+top_150_cities_by_area<-read_csv("http://faculty.olin.edu/dshuman/DS/us_top_150_cities_by_land_area.csv")%>%
+  janitor::clean_names()%>%
+  arrange(desc(land_area_mi2))
+```
+
+```{r, echo=FALSE}
+set.seed(101)
+knitr::kable(
+  top_150_cities_by_area[1:10,],caption="The top ten United States cities by land area."
+)
+```
+
+
+```{exercise}
+Use your wrangling skills to answer the following questions. Hint: start by thinking about what tables you might need to join (if any), determining which is the left table and which is the right table, and identifying the corresponding variables to match. 
+
+a. Which of the 250 most populus cities in the United States had the most shared bicycle docking stations per square mile in 2022?
+  
+a. Which of the 20 most populus cities in the United States has the most land area per 100000 inhabitants?
+  
+a. Find a list of all of the 20 largest U.S. cities by land area that had a bikeshare program listed in the BTS data, any time between 2015 and 2023.
+
+a. How many U.S. cities are in the top 150 by population, but not in the top 150 by land area? Hint: It is an even number!
+
+```
+```{r}
+# a)
+docks_per_sq <- 
+  bikeshare3 %>%
+  mutate(docks_per_mile = dock_ct/area_sq_miles) %>%
+  arrange(desc(docks_per_mile)) %>% # arranging in descending order of sq mile  
+  filter(year == "2022") 
+
+# b)
+answer_b <- 
+  top_250_cities_by_pop %>%
+  mutate(land_per_pop=(100000*area_sq_miles)/pop_2020) %>% # land per population 100000
+  arrange(desc(land_per_pop)) %>%
+  head(n=20)
+
+# c) COME BACK 
+bikeshare_15_23 <- # filtering all the cities thats not the right year 
+  bikeshare %>%
+  filter(year %in% c('2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022', '2023'))
+
+largest_bikeshare_15_23 <-
+  top_250_cities_by_pop %>% # has no duplicates
+  semi_join(bikeshare_15_23, join_by(city, state))%>% # semi joining the 
+  arrange(desc(area_sq_miles)) %>% # top cities by land area
+  head(n=20)
+
+# d)
+top_150_pop <- 
+  top_250_cities_by_pop %>%
+  arrange(desc(pop_2020)) %>% # arranging by top population
+  head(n=150) # taking only top 150 
+
+top_150_pop_and_area <- 
+  top_150_pop %>%
+  anti_join(top_150_cities_by_area) %>%
+  slice(-1) # will remove firstmost row, NY 
+
+
+```
+
+\
+
+
+# Bicycle-Use Patterns
+
+
+In this activity, you'll examine some factors that may influence the use of bicycles in a bike-renting program.  The data come from Washington, DC and cover the last quarter of 2014.
+
+```{r,echo=FALSE,out.width="400px",fig.cap="A typical Capital Bikeshare station. This one is at Florida and California, next to Pleasant Pops."}
+knitr::include_graphics("http://faculty.olin.edu/dshuman/DS/bike_station.jpg")
+```
+
+```{r,echo=FALSE,out.width="400px",fig.cap="One of the vans used to redistribute bicycles to different stations."}
+knitr::include_graphics("http://faculty.olin.edu/dshuman/DS/bike_van.jpg")
+```
+
+Two data tables are available:
+
+- `Trips` contains records of individual rentals
+- `Stations` gives the locations of the bike rental stations
+
+
+Here is the code to read in the data:^[**Important**: To avoid repeatedly re-reading the files, start the data import chunk with `{r cache = TRUE}` rather than the usual `{r}`.]
+
+```{r cache=TRUE}
+# Trips <- read_csv("http://faculty.olin.edu/dshuman/DS/2014-Q4-Trips-History-Data-Small.csv")
+Trips <- read_csv("http://faculty.olin.edu/dshuman/DS/2014-Q4-Trips-History-Data.csv")
+Stations<-read_csv("http://faculty.olin.edu/dshuman/DS/DC-Stations.csv")
+```
+
+The `Trips` data table is a random subset of 10,000 trips from the full quarterly data. Start with this small data table to develop your analysis commands. When you have this working well, you can access the full data set of more than 600,000 events by removing `-Small` from the file name.
+
+## Warm-up: Temporal patterns
+
+It's natural to expect that bikes are rented more at some times of day, some days of the week, some months of the year than others. The variable `sdate` gives the time (including the date) that the rental started.
+
+```{exercise exr-temp, name="Single variable temporal plots"}
+Make the following plots and interpret them:
+
+(a) A density plot of the events versus `sdate`. Use `ggplot()` and `geom_density()`.
+(b) A density plot of the events versus time of day.  You can use `mutate` with `lubridate::hour()`, and `lubridate::minute()` to extract the hour of the day and minute within the hour from `sdate`. Hint: A minute is 1/60 of an hour, so create a field where 3:30 is 3.5 and 3:45 is 3.75.
+(c) A histogram of the events versus day of the week.
+(d) Facet your graph from (b) by day of the week. Is there a pattern?
+
+```
+```{r}
+# a)
+ggplot(Trips, aes(x=sdate))+
+  geom_density(fill="red")+
+  labs(x="Starting Date of Trip", y="Density", title="Density Plot of Starting Date of Bike Trips")
+
+# b)
+
+Trips <-
+  Trips %>%
+  mutate(hour=lubridate::hour(sdate),minute=((lubridate::minute(sdate)*10)/6)*0.01, time_of_day = hour+minute)
+
+ggplot(Trips, aes(x=time_of_day))+
+  geom_density(fill='blue')+
+  labs(x="Time of Day of Trip Start", y="Density", title="Density Plot of Starting Time of Day of Bike Trips")
+
+# c)
+Trips <- 
+  Trips %>%
+  mutate(day_of_week = wday(sdate, label=TRUE))
+
+ggplot(Trips, aes(x=day_of_week))+
+  geom_bar()+ # we use bar insead of histogram bc x is discrete values
+  labs(x="Day of the Week", y="Frequency of Trips", title="Frequency of Trips Taken by Day of the Week")
+
+# d)
+ggplot(Trips, aes(x=time_of_day))+
+  geom_density(fill='blue')+
+  facet_grid(rows=vars(day_of_week), scale="free")+
+  labs(x="Time of Day that Trip Started", y="Density", title="Density Plot of Starting Time of Day of Bike Trips")
+```
+The pattern we can see from this visual is that on the weekdays, there are spikes of significantly more bike usage during the hours of 9am and 5pm when people will commonly get out of work. On the weekends, in contrast, the usage of bikes slowly surge starting 9am and will slowly go down at around 5pm, but there is no decrease in bike usage in between like during the weekday. Rather, the bike usage actually peaks around noontime/late afternoon. 
+
+
+The variable `client` describes whether the renter is a regular user (level `Registered`) or has not joined the bike-rental organization (`Causal`). Do you think these two different categories of users show different rental behavior? How might it interact with the patterns you found in Exercise \@ref(exr:exr-temp)?
+
+```{exercise name="Customer segmentation"}
+Repeat the graphic from Exercise \@ref(exr:exr-temp) (d) with the following changes:
+
+(a) Set the `fill` aesthetic for `geom_density()` to the `client` variable. You may also want to set the `alpha` for transparency and `color=NA` to suppress the outline of the density function.
+(b) Now add the argument `position = position_stack()` to `geom_density()`. In your opinion, is this better or worse in terms of telling a story? What are the advantages/disadvantages of each?
+(c) Rather than faceting on day of the week, create a new faceting variable like this: `mutate(wday = ifelse(lubridate::wday(sdate) %in% c(1,7), "weekend", "weekday"))`. What does the variable `wday` represent? Try to understand the code. 
+(d) Is it better to facet on `wday` and fill with `client`, or vice versa?
+(e) Of all of the graphics you created so far, which is most effective at telling an interesting story?
+
+```
+```{r}
+# a)
+ggplot(Trips, aes(x=time_of_day, fill=client))+
+  geom_density(alpha=0.35, color=NA)+
+  facet_grid(rows=vars(day_of_week), scale="free")+
+  labs(x="Time of Day that Trip Started", y="Density", title="Density Plot of Starting Time of Day of Bike Trips")
+
+# b)
+ggplot(Trips, aes(x=time_of_day, fill=client))+
+  geom_density(alpha=0.35, color=NA, position=position_stack())+
+  facet_grid(rows=vars(day_of_week), scale="free")+
+  labs(x="Time of Day that Trip Started", y="Density", title="Density Plot of Starting Time of Day of Bike Trips")
+```
+I personally feel that adding the stack makes it more difficult to differentiate between the separate behaviors of each crowd. Stacking, however, has the advantage of showing how each type of client contributes to the total/overall frequency of bike trips (as far as I know). 
+```{r}
+# c) 
+Trips <- 
+  Trips %>%
+  mutate(wday=ifelse(lubridate::wday(sdate) %in% c(1,7), "weekend", "weekday"))
+```
+c) wday represents, in this case, whether or not the day is on the weekend of weekday. The code takes the day of week from sdate, finds the one from day 1 and 7 (sun and sat), and labels it weekend. If that day is from any other number, it is labeled weekday. 
+d) I think both have their merits, however, faceting based off weekday personally seems to be cleaner, and convey the differences easier rather than faceting based off client and not weekday at all. Without faceting by weekday, it makes it significantly harder to see the important information about how bikes are being used throughout the week. If you used the fill by day of week, then you may still see that information but it will be harder to interpret. Additionally, faceting by wday and filling with client helps to directly compare the causal and registered client's behavior since they are stacked on top of each other. 
+```{r}
+# example of faceting by client, and filling by day of week 
+ggplot(Trips, aes(x=time_of_day, fill=day_of_week))+
+  geom_density(alpha=0.35, color=NA, position=position_stack())+
+  facet_grid(rows=vars(client), scale="free")+
+  labs(x="Time of Day that Trip Started", y="Density", title="Density Plot of Starting Time of Day of Bike Trips")
+```
+e) I really liked the plot made in ex 3.2a (without position stack) because you can clearly see the differences in bike usage between the two types of clients. You can see that registered clients have the pattern of using the bikes on a routine during the weekdays, while causal clients on the weekdays use it at their leisure, regardless of popular clock in/out hours. 
+
+
+## Mutating join practice: Spatial patterns
+
+```{exercise, name="Visualization of bicycle departures by station"}
+Use the latitude and longitude variables in `Stations` to make a spatial visualization of the total number of departures from each station in the `Trips` data. Your map can be static or interactive via `leaflet`. Here is a good bounding box:
+
+```
+
+```{r}
+dc_bbox<-c(-77.1,38.87,-76.975,38.95)
+
+leaflet(data=Stations) %>%
+  addTiles() %>%
+  addMarkers(lng=~long,
+             lat=~lat,
+             label=~name)
+```
+
+\
+
+```{exercise}
+Only 14.4% of the trips in our data are carried out by casual users.^[We can compute this statistic via `mean(Trips$client=="Casual")`.] Create a map that shows which area(s) of the city have stations with a much higher percentage of departures by casual users. Interpret your map. Hint: you may want to exclude stations with low overall traffic (e.g., under 20 total departures).
+ 
+group by station and casual 
+summarize ( counting per staton num o casual users )
+```
+```{r}
+percent_departures <- 
+  Trips %>%
+  group_by(sstation, client) %>% # to grab total visits of cas/reg clients
+  summarize(total_visitors=n()) %>% # counting up visitors of that client type
+  pivot_wider(names_from=client, values_from=total_visitors) %>% # making clients into columns to condense tables 
+  mutate(percent_cas = (Casual*100)/(Casual+Registered)) %>% # percentages calculated 
+  arrange(desc(percent_cas)) %>%
+  inner_join(Stations, by=c("sstation"="name")) %>% #adding long/lat columns
+  select(-nbBikes, -nbEmptyDocks) %>%
+  filter(percent_cas > 30)
+
+
+leaflet(percent_departures)%>%
+  addTiles() %>%
+  addMarkers(lng=~long,
+             lat=~lat,
+             label=~percent_cas)
+```
+
+\
+
+## Filtering join practice: Spatiotemporal patterns
+
+```{exercise, name="High traffic points"}
+
+
+(a) Make a table with the ten station-date combinations (e.g., 14th & V St., 2014-10-14) with the highest number of departures, sorted from most departures to fewest. Hint: `as_date(sdate)` converts `sdate` from date-time format to date format.   
+(b) Use a join operation to make a table with only those trips whose departures match those top ten station-date combinations from part (a).
+(c) Group the trips you filtered out in part (b) by client type and `wday` (weekend/weekday), and count the total number of trips in each of the four groups. Interpret your results.
+
+```
+```{r, cache=TRUE}
+# a) 
+station_date_highest_dep <-
+  Trips %>%
+  # filter(client=="Casual") %>%
+  mutate(date=as_date(sdate)) %>% # a column w just the date to filter
+  group_by(sstation, date) %>% # grouping by station and date to then summarize #
+  summarize(departures=n()) %>% 
+  # mutate(week_day=wday(date, label=TRUE)) %>%
+  arrange(desc(departures)) %>%
+  head(10)
+
+# b) semi join 
+station_join <-
+  Trips %>%
+  mutate(date=as_date(sdate)) %>% # adding date column 
+  semi_join(station_date_highest_dep, by=c("sstation"="sstation", "date"="date")) %>% # discarding cases from Trips that dont align w the station/date combo
+  select(-duration, -sdate, -edate, -estation, -bikeno, -hour, -minute, -time_of_day, -day_of_week) %>%
+  head(10)
+
+# c)
+station_join <-
+  station_join %>%
+  group_by(client, wday) %>%
+  summarize(trips_total = n()) %>% # filter(week_day %in% c("Mon")) %>%
+  pivot_wider(names_from=c(client, wday), values_from=trips_total)
+
+station_join
+```
+c) The vast majority of bikeshare users are registered users during the weekdays, which indicates that a high amount of general bikeshare users may be using the service to commute to work. 
+

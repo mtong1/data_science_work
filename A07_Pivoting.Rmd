@@ -1,0 +1,297 @@
+---
+title: "| Data Science With an Eye Towards Sustainability    \n| Activity A7: Changing Cases\n"
+author: "INSERT STUDENT NAME HERE"
+output:
+  bookdown::html_document2:
+    split_by: none
+    toc: no
+
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(janitor)
+library(ggsci)
+library(scales)
+knitr::opts_chunk$set(tidy = FALSE, message=FALSE, warning=FALSE)
+```
+
+# Pivoting and Wide and Narrow Data Formats
+
+Additional reading: 
+
+* [Wickham and Grolemund on pivoting](https://r4ds.had.co.nz/tidy-data.html#pivoting), or 
+* [Baumer, Kaplan, and Horton on reshaping data](https://mdsr-book.github.io/mdsr2e/ch-dataII.html#reshaping-data)
+
+As we are transforming data, it is important to keep in mind what constitutes each case (row) of the data. For example, in the initial sample data below, each case is a single category-quarter combination. 
+
+```{r, echo=FALSE}
+DF<-tibble(category=c("A","A","A","A","B","B","B","B","C","C","C","C"),quarter=rep(c("Q1","Q2","Q3","Q4"),3),amount=c(9.56, 7.36, 0.28, 9.79, 8.42, 9.19, 1.47, 5.57, 1.28, 0.06, 6.77, 5.74))
+knitr::kable(
+  DF,caption="Each case is one category-quarter combination."
+)
+```
+
+It is often necessary to rearrange your data in order to create visualizations, run statistical analysis, etc. We have already seen some ways to rearrange the data to change the case. For example, what is the case after performing the following command?
+
+```{r}
+DFTotal<-DF %>%
+  group_by(category) %>%
+  summarise(total=sum(amount))
+```
+
+Each case now represents one a category:
+
+```{r, echo=FALSE}
+knitr::kable(
+  DFTotal, caption="Narrow format where each case is just a category."
+)
+```
+
+In this activity, we are going to learn two new operations to reshape and reorganize the data: `pivot_wider()` and `pivot_longer()`.
+
+## Wider
+
+We'd like to transform the data into a **wide format** with each of the possible values of the `quarter` variable becoming its own column. The operation we need to perform this transformation is **`pivot_wider()`**. It takes a `values_from`  (`amount` in this case) representing the variable to be divided into multiple new variables, and a `names_from` (the original variable `quarter` in this case) that identifies the variable in the initial narrow format data whose values should become the names of the new variables in the wide format data. The `names_sort=TRUE` dictates that the variables are listed in alphabetical order; when it is FALSE, they are listed in order of first appearance.
+
+
+```{r}
+DFWide<-DF %>%
+  pivot_wider(names_from=quarter,values_from=amount,names_sort=TRUE)
+```
+
+```{r, echo=FALSE}
+knitr::kable(
+  DFWide, caption="A wide format with one case per category."
+)
+```
+
+Now let's add a new column that has the total values for the two halves of the year:
+```{r}
+DFWide<-DFWide%>%
+  mutate(H1=Q1+Q2,H2=Q3+Q4)
+```
+
+```{r, echo=FALSE}
+knitr::kable(
+  DFWide, caption="A wide format with one case per category and two new columns."
+)
+```
+
+Aside: If instead we wanted the categories across the top as variables and the quarters as the rows, we could `pivot_wider()` on the `category` variable:
+
+```{r}
+DFWide2<-DF %>%
+  pivot_wider(names_from=category,values_from=amount,names_sort=TRUE)
+```
+
+```{r, echo=FALSE}
+knitr::kable(
+  DFWide2, caption="A wide format with one case per quarter."
+)
+```
+
+## Longer
+
+To switch back from a wider format to a narrower format, we can use the following **`pivot_longer()`** operation. It gathers the columns listed c(`Q1`,`Q2`,`Q3`,`Q4`,`H1`,`H2`) under the `cols` argument into a single column whose name is given by the `names_to` argument ("time_period"), and includes the values in a column called `total`, which is the input to the `values_to` argument.
+
+```{r}
+DFNarrow<-DFWide %>%
+  pivot_longer(cols=c(`Q1`,`Q2`,`Q3`,`Q4`,`H1`,`H2`),names_to="time_period",values_to="total")
+# we could also specify `cols=-category` or `cols=starts_with(c("Q","H"))`
+```
+
+```{r, echo=FALSE}
+knitr::kable(
+  DFNarrow,caption="Narrow format where each row is a category-time_period pair, where the time period is either a quarter or a half."
+)
+```
+
+\
+
+# Summary Graphic
+
+Here is a nice summary graphic of `pivot_longer` and `pivot_wider` from the [RStudio cheat sheet on tidy data](https://rstudio.github.io/cheatsheets/tidyr.pdf):
+
+```{r, out.width = "700px",echo=FALSE}
+knitr::include_graphics("http://faculty.olin.edu/dshuman/DS/reshaping.jpg")
+```
+
+\
+
+# Crop Yields
+
+As shown in the following graphic from [Our World in Data](https://ourworldindata.org/world-lost-one-third-forests), one of the historical causes of deforestation has been using more land to grow crops:
+
+```{r, out.width = "1000px",echo=FALSE}
+knitr::include_graphics("http://faculty.olin.edu/dshuman/DS/deforestation.png")
+```
+
+An important way to slow this trend is by improving **crop yields**: how much of a crop can be produced annually on a fixed size of land (e.g., a [hectare](https://en.wikipedia.org/wiki/Hectare)). In addition to slowing deforestation, improving crop yields has important consequences in [food security](https://ourworldindata.org/yields-vs-land-use-how-has-the-world-produced-enough-food-for-a-growing-population), health outcomes, economic sustainability, and [habitat preservation](https://ourworldindata.org/yields-habitat-loss).
+
+Thankfully, crop yields have increased significantly over the last century, due primarily to agricultural technology improvements that are collectively referred to as the Green Revolution. [Our World in Data](https://ourworldindata.org/yields-vs-land-use-how-has-the-world-produced-enough-food-for-a-growing-population) writes: 
+
+"The Green Revolution is used to describe the large-scale transfer and adoption of new technologies in the agricultural sector, particularly in the developing world. These technologies included chemical inputs (such as fertilizers and pesticides), irrigation technologies, farm mechanization (such as tractors), and high-yielding rice, wheat and maize seed varieties."
+
+Our World in Data editor and Not the End of the World author Hannah Ritchie shows how much cropland these increases in productivity have spared in the following chart ([source](https://ourworldindata.org/grapher/land-sparing-by-crop)):
+
+```{r, out.width = "1000px",echo=FALSE}
+knitr::include_graphics("http://faculty.olin.edu/dshuman/DS/land-sparing-by-crop.png")
+```
+
+In this activity, we are going to further explore trends in crop yields from 1961-2021. We'll use data from the [Food and Agriculture Organization of the United Nations (FAO)](https://www.fao.org/faostat/en/#data/QCL), loaded in the following code chunk:
+
+```{r,message=FALSE,cache=TRUE}
+crops<-read_csv("http://faculty.olin.edu/dshuman/DS/Production_Crops_Livestock_E_All_Data.csv")%>%
+  janitor::clean_names()
+names(crops) <- sub('^y', '', names(crops))
+```
+
+
+\
+
+# Practice
+
+\
+
+
+```{exercise,name="Interpretation practice",label="mexico-cereal"}
+Write a sentence to explain the story the following graphic is telling.
+
+```
+The following graphic depicts how Mexico's cereal production life cycle has changed over the course of 1960-2020. From the data, we can see that since the 60s, production and yield of the product has increased. The area harvested, on the other hand, has fluctuated since the 60s. This shows that even given a smaller area to harvest from, the production and yield of cereal was increasingly efficient. 
+
+```{r, out.width = "700px",echo=FALSE}
+knitr::include_graphics("http://faculty.olin.edu/dshuman/DS/mexico_cereal_yield.png")
+```
+
+
+\
+
+```{exercise,name="Wrangling practice"}
+Starting from the `crops` data (79606 observations of 195 variables), do the following:   
+  
+  - Keep only the rows corresponding to `area_code` 5000, 5100, 5203, 5204, 5207, 5300, 5400, 5500 (continents or larger regions)   
+  - Keep only the rows corresponding to yields, not land used or total production   
+  - Delete all of the year columns that end in "f" (note codes) or "n" (normalized data)    
+  - Delete all of the data associated with 2022 (too much missing data for that year)    
+  - Only keep the data for the following crops: Wheat, Vegetables Primary, Rice, Maize (corn), Apples, and Soya beans    
+  - Delete the following variables: `area_code_m49`, `item_code_cpc`, `element_code`, `element`, `unit`   
+  - Store the resulting table as `crops2`   
+
+After all of that, your `crops2` table should end up with 48 rows and 65 variables. Check that this is the case before moving on. 
+
+```
+```{r}
+crops2 <- 
+  crops %>%
+  filter(area_code %in% c(5000, 5100, 5203, 5204, 5207, 530, 5400, 5500), element %in% 'Yield') %>% # only taking area_codes listed 
+  select(-ends_with('f'), -ends_with('n'), -"2022") %>% # getting rid of columns w f and n on the end, and also 2022 
+  filter(item %in% c("Cereals n.e.c.", "Wheat", "Vegetables Primary", "Rice", "Maize (corn)", "Apples", "Soya beans")) %>% # only taking items of this type 
+  select(-area_code_m49, -item_code_cpc, -element_code, -element, -unit) # getting rid of more columns, using - to indicate delete
+```
+
+\
+
+```{exercise,name="Pivoting practice"}
+Make and print out a table where the rows are the regions we selected, the columns are the crops we selected, and the entries are the average 2021 yields (100 g / hectare) for each crop in each region.
+
+```
+```{r}
+crops3 <-
+  crops2 %>%
+  select(area, item, "2021") %>%
+  pivot_wider(names_from=item, values_from='2021')  # pivoting wider makes entries in a column into their own columns, filling it w values from 2021 
+
+crops3
+```
+
+
+\
+
+```{exercise,name="Historical crop trends"}
+Visualize the data from `crops2` in a single graphic, as follows:
+  
+  - There should be 6 facets - one for each crop - stacked on top of each other   
+  - Each facet should contain a plot with the year on the x-axis (1961-2021), the yield on the y-axis, and 8 separate lines, one for each of the regions we selected    
+  - The line colors should be different for each region and labeled in a legend    
+  - The units of the y-axis should be tonnes/hectare
+
+Some hints for this exercise:
+  
+  - You can find plots like this for a single crop at a time on [Our World in Data](https://ourworldindata.org/crop-yields)    
+  - A good first step is probably to draw a rough sketch on paper   
+  - You will have to do some pivoting to get the `crops` data into glyph-ready format (one row per glyph); before you start pivoting, think about how you want the data to end up in order to be ready to send to `ggplot`   
+  - The y-axis of the plot should be tonnes/hectare, but that is not the unit given in `crops`, so you will have to do some unit conversion   
+  - The yields are quite different for each crop, so you want to let the y-axis scales be different for each facet   
+  - `ggplot` will do a better job of automatically labeling the years on the x-axis if you first convert the years from character strings to doubles with `as.double`   
+  - For line colors that are easier to tell apart, I used the `scale_color_lancet()` function from the `ggsci` package
+
+```
+
+```{r}
+crops4 <- pivot_longer(crops2, '1961' : '2021', names_to="year")  # add a table w years, and corresponding value. this increases # rows
+
+  ggplot(crops4, aes(x=year, y=value, color=area))+ # year on x, yield on y, and coloring based on region 
+    geom_line(aes(group = area))+ # r cant make assumption about which lines to make even w facets/color differentiation, therefore specify the lines grouping
+    facet_grid(rows=vars(item),scales="free")+ # scaling each facet based on values, each crop type is the type of facet 
+    theme(axis.text.x = element_text(angle = 90, size=5))+ # rearranging x axis text so its easier to read 
+    labs(x="Year", y="Yield", title="Yield of Crop from the Years 1961 to 2021")
+```
+
+
+\
+
+```{exercise,name="Computing compound annual growth rates"}
+Now let's compute some metrics associated with the graphs above. The ***compound annual growth rate (CAGR)*** of a quantity is the percent it grows each year, on average, assuming compounding. For example, if you start with a value of 100 at time 0 and the three-year CAGR is 2.5%, then the value after three years is 100\*(1+.025)\*(1+.025)\*(1+.025)=107.69.
+
+Use pivoting and wrangling commands to start from `crops2` and make and print a table with eight rows (one for each region) and three columns: the region name, the CAGR of Maize (corn) from 1961-2021, and the CAGR of Wheat from 1961-2021. If you want to make it look nicer, you can use the command `percent(x,accuracy=.01)` which takes whatever is in x and converts it to a percentage with two decimals.
+
+```
+```{r}
+crops_CAGR <- 
+  crops2 %>%
+  select(area, item, "1961", "2021") %>% # select which columns i want to keep
+  filter(item %in% c("Maize (corn)", "Wheat")) %>%
+  mutate(CAGR=percent(((`2021`/`1961`)^(1/60)) - 1, accuracy=0.1)) %>% # calculate CAGR and put into a column, note that numerical column names have to be specified w '' instead of ""
+  select(-"1961", -"2021") %>% # getting rid of value columns 
+  pivot_wider(names_from=item, values_from = CAGR) # making items into columns filled w CAGR values 
+
+crops_CAGR
+```
+
+
+\
+
+```{exercise,name="Choose your own adventure"}
+Choose **one** of the following three options:
+
+a. Make a country choropleth of the world where the color of each country corresponds to its 2021 wheat yield in tonnes/hectare. Hint: be careful about the country names; if you are matching to an existing list of country names that has the map, you may need to go in and manually change some of the country names (e.g., eliminate "Republic of").     
+b. Recreate the graphic in Exercise \@ref(exr:mexico-cereal), using "Cereals, primary" data. Hint: be careful about the units.     
+c. Formulate a research question about crop yields that these data can help you answer. Make a visualization that is a first step towards exploring the answer to your question.
+
+```
+```{r}
+mexico_cereal <-
+  crops %>%
+  select(-item_code_cpc, -item_code, -area_code_m49, -area_code, -element_code, -ends_with('f'), -ends_with('n')) %>%
+  filter(area %in% "Mexico", item %in% "Cereals, primary") %>%
+  pivot_longer('1961' : '2022', names_to="year") %>% # add a table w years, and corresponding value. this increases # rows
+  mutate(year=as.double(year)) # changes year column to double from characters
+
+mexico_cereal$value[mexico_cereal$element=="Yield"] <- mexico_cereal$value[mexico_cereal$element=="Yield"]/10000 # makes the scale of y diff 
+
+mexico_cereal$element <- fct_relevel(mexico_cereal$element,  c("Area harvested", "Yield", "Production")) # sets the order of the facet 
+
+# changes the label order 
+element_labs <- c("Area harvested (hectares)",  "Yield (tonnes per hectare)", "Production (tonnes)")
+names(element_labs) <- c("Area harvested", "Yield", "Production") 
+
+ggplot(mexico_cereal, aes(x=year, y=value, group = element))+
+  geom_line( size=1)+
+  geom_point(size=2)+
+  facet_grid(rows=vars(element), scales="free", labeller = labeller(element=element_labs))+ # corresponds the vectors above labels 
+  labs(x=element_blank(), y=element_blank(), title="Cereal in Mexico: Evolution in Area Harvested, Yield, and Production")
+  scale_x_continuous(breaks=seq(1960, 2020, 20)) # changes interval of x axis ticks
+  
+```

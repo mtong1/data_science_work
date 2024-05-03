@@ -1,0 +1,688 @@
+---
+title: "| Data Science With an Eye Towards Sustainability    \n| Activity A11: Introduction to Statistical Modeling\n"
+author: "Madie Tong"
+output:
+  bookdown::html_document2:
+    toc: true
+    toc_float: true
+    toc_depth: 4
+
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(gridExtra)
+library(choroplethr)
+library(choroplethrMaps)
+library(RColorBrewer)
+library(DT)
+library(dslabs)
+library(ggsci)
+knitr::opts_chunk$set(tidy = FALSE, message=FALSE, warning=FALSE)
+options(htmltools.dir.version = FALSE)
+```
+
+
+# Statistical Modeling
+
+```{r echo=FALSE}
+knitr::include_graphics("http://faculty.olin.edu/dshuman/DS/stat_flow.png")
+```
+
+\
+
+Just as when exploring single variables, there are limitations in relying solely on visualizations to analyze relationships among 2+ variables.  *Statistical models* provide rigorous numerical summaries of relationship trends between 
+a response variable and one or more predictors:
+
+  - **response variable**:
+    The variable whose variability we would like to explain or predict (e.g., a country's life expectancy)
+
+  - **predictors**:
+    The variable(s) that might explain some of the variability in the response. (e.g., a country's GDP, fertility rate, continent, population, education rates, etc.)
+
+
+\
+
+# Gapminder 2012
+
+```{r}
+data(gapminder)
+gapminder12<-filter(gapminder,year==2012)
+```
+
+We are going to model the quantitative response variable `life_expectancy` in 2012, using three different explanatory variables:
+
+- `fertility` (quantitative)
+- `small_pop` (categorical)
+- `continent` (categorical)
+
+First, let's construct the `small_pop` variable, which should equal to `TRUE` if the country's population is less than or equal to 1 million people, and `FALSE` otherwise.
+
+```{r}
+gapminder12<-gapminder12%>%
+  mutate(small_pop=(population<=1000000))%>%
+  select(country,life_expectancy,fertility,population,small_pop,continent)
+DT::datatable(gapminder12, options = list(pageLength = 6))
+```
+First, let us look at the variation in our response variable:
+```{r}
+summary(gapminder12$life_expectancy)
+ggplot(gapminder12,aes(x=life_expectancy))+
+  geom_density(alpha=.8,fill="red")+
+  labs(x="2012 Life Expectancy (Years)",y="Density")
+```
+
+```{r,echo=FALSE}
+gapminder12map <- gapminder12 %>%
+  mutate(value=life_expectancy,region=tolower(country))%>%
+  select(region,value)
+gapminder12map$region[gapminder12map$region=="united states"]="united states of america"
+gapminder12map$region[gapminder12map$region=="congo, dem. rep."]="democratic republic of the congo"
+gapminder12map$region[gapminder12map$region=="congo, rep."]="republic of congo"
+gapminder12map$region[gapminder12map$region=="tanzania"]="united republic of tanzania"
+gapminder12map$region[gapminder12map$region=="cote d'ivoire"]="ivory coast"
+gapminder12map$region[gapminder12map$region=="macedonia, fyr"]="macedonia"
+gapminder12map$region[gapminder12map$region=="serbia"]="republic of serbia"
+gapminder12map$region[gapminder12map$region=="slovak republic"]="slovakia"
+gapminder12map$region[gapminder12map$region=="guinea-bissau"]="guinea bissau"
+gapminder12map$region[gapminder12map$region=="lao"]="laos"
+p1<-country_choropleth(gapminder12map)+
+  scale_fill_manual(values = rev(brewer.pal(7,"RdBu")),name="Life Expectancy")
+```
+
+```{r,echo=FALSE}
+gapminder12map$value=gapminder12$continent
+p3<-country_choropleth(gapminder12map)+
+  scale_fill_lancet(name="Continent")
+```
+
+```{r,echo=FALSE}
+gapminder12map$value=gapminder12$fertility
+p2<-country_choropleth(gapminder12map)+
+  scale_fill_manual(values = rev(brewer.pal(7,"RdBu")),name="Fertility")
+```
+
+```{r,echo=FALSE}
+gapminder12map$value=gapminder12$small_pop
+p4<-country_choropleth(gapminder12map)+
+  scale_fill_lancet(name="Population <= 1M")
+```
+
+
+\
+
+Do you see any relationships between and of these explanatory variables and the life expectancy?
+
+```{r,fig.width=16,echo=FALSE}
+p1
+p2
+p3
+p4
+```
+
+# Linear Regression Models (At Most One Explanatory Variable)
+
+```{exercise, name="Do not need to submit answers"}
+Before going into details, examine the plots below and think about a model that captures the trend of each relationship being illustrated.
+
+```
+
+
+
+```{r echo=FALSE, fig.height=4, fig.width=8, warning=FALSE}
+ggplot(gapminder12, aes(y=life_expectancy, x=fertility)) + 
+    geom_point(alpha=0.25) 
+ggplot(gapminder12, aes(x=life_expectancy, fill=small_pop)) + 
+    geom_density(alpha=0.8) + 
+  scale_fill_lancet(name="Population <= 1000000")
+ggplot(gapminder12, aes(x=life_expectancy, fill=continent)) + 
+    geom_density(alpha=0.8) + 
+  scale_fill_lancet(name="Continent")
+```
+
+<br>
+ex
+
+**Linear regression** can be used to model each of these relationships.  "Linear" here indicates that the linear regression model of a response variable is a *linear combination* of explanatory variables.  It does *not* mean that the relationship itself is linear!!  In general, let 
+$y$ be our **quantitative** response variable and ($x_1, x_2, ..., x_k$) be $k$ explanatory variables (quantitative or categorical).  Then the (population) linear regression model of $y$ vs the $x_i$ is
+
+$$y = \beta_0 + \beta_1 x_1 + \beta_2 x_2 + \cdots + \beta_k x_k + \epsilon$$
+
+where 
+
+- $y = \beta_0 + \beta_1 x_1 + \beta_2 x_2 + \cdots + \beta_k x_k$ describes the *typical* or *expected* outcome of $y$ at a set of predictors
+
+- $\epsilon$ captures the individual *deviations* from the expected outcome (i.e., *residuals*)
+
+- $\beta_0$ = intercept coefficient    
+    average $y$ value when $x_1=x_2=\cdots=x_k=0$
+
+- $\beta_i$ = $x_i$ coefficient    
+    *when holding constant all other $x$*, the change in $y$ when we increase $x_i$ by 1    
+    
+In RStudio, we construct *sample estimates* of linear regression models using the `lm()` (linear model) function.  Consider a simple example: 
+
+```{r echo=FALSE}
+set.seed(2000)
+x1 <- rnorm(100, mean=100, sd=10)
+x2 <- rnorm(100, mean=10, sd=2)
+y <- 5*x1 + 2*x2 + rnorm(100,sd=20)
+mydata <- round(data.frame(x1,y,x2))
+```
+
+```{r,eval=FALSE}
+my_model <- lm(y ~ x1 + x2, data = mydata)
+summary(my_model)
+```
+
+```{r echo=FALSE}
+knitr::include_graphics("http://faculty.olin.edu/dshuman/DS/lm_output.png")
+```
+We'll start by focusing on visualizing, constructing, and interpreting models. We'll talk more later about model quality and deviations from the model trend.  **IMPORTANT:**  Be sure to interpret the coefficients in a *contextually meaningful way* that tells the audience about the relationships of interest (as opposed to simply providing a definition). 
+
+
+<br>
+
+## Models with zero explanatory variables
+
+First, let's try out the simple model `life_expectancy`~1; that is, we'll only consider the intercept term $\hat{\beta}_0$ and no other variables. What do we expect the intercept term to be?
+
+```{r}
+m0<-lm(life_expectancy~1,data=gapminder12)
+m0$coefficients
+mean(gapminder12$life_expectancy)
+```
+
+This model just predicts the same value for every country, and that prediction is the average life expectancy across all countries in the data set (giving equal weight to each country, not each person).
+
+## Models with one quantitative predictor
+
+Next, let's consider the model `life_expectancy` ~ 1 + `fertility`. We can view this as a line of best fit through our scatter plot points from above:
+```{r}
+ggplot(gapminder12, aes(x = fertility, y = life_expectancy)) + 
+    geom_point(alpha = 0.25) + 
+    geom_smooth(method = "lm",se=FALSE)
+```
+
+Here are the model coefficients:
+```{r}
+model1 <- lm(life_expectancy ~ 1 + fertility, data=gapminder12)
+# just the model coefficients
+model1$coefficients 
+```
+
+So the model is 
+        `life_expectancy = 83.904500 - 4.382073  * fertility` 
+
+For example, the fitted model values for the first rows of data are given by:
+
+$$83.904500\cdot \left(\begin{array}{c} 1 \\ 1 \\ 1 \\ 1 \\ \vdots \end{array}\right)-4.382073 \cdot \left(\begin{array}{c} 1.76 \\ 2.82 \\ 5.98 \\ 2.10 \\ \vdots \end{array}\right)=\left(\begin{array}{c} 76.19205 \\ 71.54704 \\ 57.6997 \\ 74.70125 \\ \vdots \end{array}\right)$$
+
+
+The interpretation of the `fertility` coefficient is that, on average, as the `fertility` variable for a country increases by one year, the `life_expectancy` decreases by 4.382073. This model is a single line with intercept of 83.904500 and slope of -4.382073.   
+
+
+Question: What is the model's estimate of the life expectancy in 2012 for a country with an average fertility rate of three children per woman? Of five children per woman? Try this first by hand, and then we'll do it with `R`:
+      
+```{r}
+# Method 1
+new_fertilities<-c(3,5)
+model1$coefficients[1]+model1$coefficients[2]*new_fertilities
+
+# Method 2
+new_vals=data.frame(fertility=new_fertilities)
+predict(model1,new_vals)
+
+# Method 3
+library(mosaic)
+f<-makeFun(model1)
+f(new_fertilities)
+```  
+
+<br> 
+
+> **Residuals**
+>
+> Let case $i$ have observed response $y_i$ and predictor $x_i$.  Then the model / predicted value for this case is $$\hat{y}_i = \hat{\beta}_0 + \hat{\beta}_1 x_i$$ The difference between the observed and predicted value is the residual $r_i$: $$r_i = y_i - \hat{y}_i$$ In linear regression, the model coefficients (the $\hat{\beta}_i$s) are chosen to minimize the sum of the squared residuals:  $\sum_i r_i^2$.
+
+Here are the residuals for this model:
+```{r}
+ggplot(gapminder12, aes(x=fertility,y=life_expectancy)) + 
+        geom_smooth(method="lm", se=FALSE) + 
+        geom_point(alpha=.4) + 
+        geom_segment(aes(y=life_expectancy, yend=model1$fitted.values, x=fertility, xend=fertility),alpha=.2)
+```
+
+The first few are given by:
+
+$$\left(\begin{array}{c} 77.5 \\ 76.2 \\ 58.5 \\ 76.1 \\ \vdots \end{array}\right)-\left(\begin{array}{c} 76.19205 \\ 71.54704 \\ 57.6997 \\ 74.70125 \\ \vdots \end{array}\right)=\left(\begin{array}{c} 1.307948 \\ 4.652945 \\ 0.8002956 \\ 1.397853 \\ \vdots \end{array}\right)$$
+
+We can print out a list of the residuals for each country with the command `resid(model1)`, and we can access the fitted model values with `model1$fitted.values`.
+
+**Key point: The least squares regression line is the one that minimizes the sum of squared residuals (SSR).** If we shift the blue line up or down or rotated it in any direction, we'll increase the sum of the squared residuals.
+
+<br>
+
+## Models with one categorical predictor
+
+Return to our visualization of a quantitative response variable vs. a categorical explanatory variable:
+
+```{r,echo=FALSE,fig.height=4,fig.width=8}
+ggplot(gapminder12, aes(x=life_expectancy, fill=small_pop)) +
+  geom_density(alpha=0.8) + 
+  scale_fill_lancet(name="Population <= 1000000")
+```
+
+It doesn't make sense to capture the trend of this relationship by fitting a line to the data.  Rather, the trend can be captured by the mean life expectancy in each group. For this reason, models with all categorical explanatory variables are often called **groupwise means models**.
+
+Here is the model `life_expectancy` ~ 1 + `small_pop`:
+```{r}
+model2 <- lm(life_expectancy ~ 1+ small_pop, data = gapminder12)
+model2$coefficients
+```
+
+Huh?!  RStudio splits categorical predictors up into a **reference level/group** (the first alphabetically) and indicators for the other groups.  Here, countries with populations larger than one million (`small_popFALSE`) are the reference group and $$\text{small_popTRUE} = \begin{cases} 1 & \text{ if population <= 1000000} \\ 0 & \text{ otherwise} \\ \end{cases} \;\;\;\; \text{ and } \;\;\;\; \text{small_popFALSE} = \begin{cases} 1 & \text{ if population > 1000000} \\ 0 & \text{ otherwise} \\ \end{cases}$$  In other words, the `small_pop` variable is turned into a "dummy variables":   $$\left(\begin{array}{c} \text{FALSE} \\ \text{FALSE} \\ \text{FALSE} \\ \text{TRUE} \\ \vdots \end{array}\right) \;\;\; \to \;\;\; \text{small_popTRUE} =  \left(\begin{array}{c} 0 \\ 0 \\ 0 \\ 1 \\ \vdots \end{array}\right),~~ \text{small_popFALSE} =  \left(\begin{array}{c} 1 \\ 1 \\ 1 \\ 0 \\ \vdots \end{array}\right),$$
+where the length of the vector corresponds to the number of countries in the data set.
+Since these vectors sum to a vector of all ones, we only need to put two into our model and leave the other out as a reference level.  
+
+
+With these ideas in mind, we can interpret all coefficients in our model. Specifically, we can plug in 0's and 1's to obtain two separate model values for the small population countries and large population countries. For example, for small population countries, we have that the predicted value is 
+
+`Intercept + 1*small_popTRUE  = 71.3769737 + 0.8578748 = 72.23485`
+
+For larger population countries, we have that the predicted value (or groupwise mean) is
+
+`Intercept + 0*small_popTRUE = 71.3769737`
+
+We can also double check these with `dplyr` functions:
+
+```{r}
+# Group by small_pop & summarize the means
+gapminder12 %>%  
+    group_by(small_pop) %>% 
+    summarize(means = mean(life_expectancy, na.rm = TRUE))      
+```
+
+Finally, let's consider the model `life_expectancy` ~ 1 + `continent`:
+```{r}
+model3 <- lm(life_expectancy ~ 1+ continent, data = gapminder12)
+model3$coefficients
+```
+The reference level is again the first alphabetically, which in this case is `Africa` (it is also the only one without a coefficient). Since there are five continental regions in this data set, we need four indicator variables, each in the form, e.g., $$\text{continentAsia} = \begin{cases} 1 & \text{ if continent ==  Asia} \\ 0 & \text{ otherwise} \\ \end{cases}.$$ The entries in the `continent` variable start with $\left(\begin{array}{c} \text{Europe} \\ \text{Africa} \\ \text{Africa} \\ \text{Americas} \\ \vdots \end{array}\right)$. The fitted model values (the groupwise means) are then given by: 
+
+$$62.143137\cdot \left(\begin{array}{c} 1 \\ 1 \\ 1 \\ 1 \\ \vdots \end{array}\right)+12.435196 \cdot \left(\begin{array}{c} 0 \\ 0 \\ 0 \\ 1 \\ \vdots \end{array}\right)+11.960905 \cdot \left(\begin{array}{c} 0 \\ 0 \\ 0 \\ 0 \\ \vdots \end{array}\right)+16.138914 \cdot \left(\begin{array}{c} 1 \\ 0 \\ 0 \\ 0 \\ \vdots \end{array}\right)+8.110196 \cdot \left(\begin{array}{c} 0 \\ 0 \\ 0 \\ 0 \\ \vdots \end{array}\right)=\left(\begin{array}{c} 78.28205 \\ 62.14314 \\ 62.14314 \\ 74.57833 \\ \vdots \end{array}\right).$$
+Again, the fitted model value for each country in the same continental region is the same, and is equal to the mean life expectancy of all countries in that group.
+
+To sense check these values, look back at the layered density plots above. Does it seem plausible that these are some of the five means of the respective distributions?
+
+Let's double check:
+```{r}
+# Group by continent & summarize the means
+gapminder12 %>%  
+    group_by(continent) %>% 
+    summarize(means = mean(life_expectancy, na.rm = TRUE))      
+```
+
+\
+
+# Linear Regression Models (Multiple Explanatory Variables)
+
+Recall from above, the **population** linear regression model of $y$ vs the $x_i$ is
+
+$$y = \beta_0 + \beta_1 x_1 + \beta_2 x_2 + \cdots + \beta_k x_k$$
+
+where 
+
+- $\beta_0$ = intercept coefficient    
+    average $y$ value when $x_1=x_2=\cdots=x_k=0$
+
+- $\beta_i$ = $x_i$ coefficient    
+    ***when holding constant all other $x$***, the per unit change to $y$ when we increase $x_i$ by 1 unit.     
+    
+    
+    
+## A model with one quantitative predictor and one categorical predictor
+
+Here is a visualization of the relationship between `life_expectancy` (response variable), `fertility`, and `continent`:
+
+```{r,fig.width=16}
+ggplot(gapminder12, aes(y=life_expectancy, x=fertility, color=continent)) + 
+    geom_point() + 
+    facet_wrap(~ continent) + 
+  scale_color_lancet(name="Continent")
+```
+
+What form might a linear model for this data take?
+
+```{r}
+modTwo<-lm(life_expectancy~1+fertility+continent,data=gapminder12)
+modTwo$coefficients
+```
+As an example, for this model, we interpret the `fertility` coefficient as, on average, we expect the life expectancy to be 2.586435 years lower for each average child per woman (increase in `fertility`) **holding the continent category level constant** (also said as *controlling for the continent category level*).
+
+Returning to our graphic, this particular model represents **five separate lines, each with the same slope**.
+
+```{r,echo=FALSE,fig.width=8}
+ggplot(gapminder12, aes(y=life_expectancy, x=fertility)) + 
+    geom_point(aes(fill=continent), 
+       colour="black",pch=21, size=5) +
+  geom_line(aes(y=modTwo$fitted.values,color=continent),size=2)+
+  scale_fill_lancet(name="Continent")+
+  scale_color_lancet(guide="none")
+#        scale_fill_manual(values = rev(brewer.pal(6,"Spectral")),name="Continent")+
+#  scale_color_manual(values = rev(brewer.pal(6,"Spectral")),guide="none")
+```
+
+**Thought question**: Focusing only on countries in Europe, what is the relationship between `fertility` and `life_expectancy`? Is this relationship different in Europe than in the other continents? Our model above does not account for this (because we have not given it the flexibility to do so)! We will return to this question in the next section when we disucss *interaction effects*. 
+
+## A model with multiple categorical variables
+
+Here is an example with two categorical explanatory variables: `small_pop` and `continent`:
+
+```{r}
+modCats<-lm(life_expectancy~1+small_pop+continent,data=gapminder12)
+modCats$coefficients
+```
+
+
+```{exercise, name="Do not need to submit answers"}
+   
+a. What is the reference level for each variable?   
+  b. What does this model predict for the life expectancy in 2012 for a country in Africa with population greater than 1 million? For a country in Africa with a population less than or equal to 1 million? For a country in Europe with population greater than 1 million?    
+  c. How many unique possibilities are there for the fitted values? Make a table.
+
+```
+b) for country in africa with large pop, would be 62.0 since 62 applies to all, but small_popTRUE doesn't. Also, since there is not extra coeff for Africa as africa's is the baseline. With a small pop, would be 62+0.5(1). For big country in Europe, would be 62+0.5(1) + 16
+
+c) There are 10 unique possibilities since there are 5 continents accounted for and two possibilities for each. 
+\
+
+# Interaction Terms
+
+In Section 3.1, we examined the linear model 
+
+```
+life_expectancy ~ 1 + fertility + continent
+```
+
+This regression model is represented by five parallel lines, one for each continental region. However, in the exploratory visualization at the beginning of Section 3.1, we see that the relationship between `fertility` and `life_expectancy` varies by continent (e.g., there is a negative correlation in Africa and a positive correlation in Europe). That is, the covariate `continent` **modifies the relationship** between the explanatory variable `fertility` and the response variable `life_expectancy`. In this situation, it is appropriate to include an **interaction term** in our model. 
+
+We can do this in two ways in `R`. The longer way:
+
+```{r}
+modTwoUpdated<-lm(life_expectancy~1+fertility+continent+fertility:continent,data=gapminder12)
+modTwoUpdated$coefficients
+```
+
+The short-cut to represent the same model:
+
+```{r}
+modTwoUpdated2<-lm(life_expectancy~fertility*continent,data=gapminder12)
+modTwoUpdated2$coefficients
+```
+
+**What does this model look like?**
+
+- This model is also comprised of five lines representing the relationship between fertility and life expectancy, one for each continent.    
+- However, **these model lines are not necessarily parallel**, as the extra flexibility allows each to have a different slope. 
+
+We can see this in a visualization (it is the default model used by `geom_smooth` when the method is set to `lm`):
+
+```{r,fig.height=10,fig.width=16}
+ggplot(gapminder12, aes(y=life_expectancy, x=fertility, color=continent)) + 
+    geom_point(size=3,alpha=.5) + 
+  geom_smooth(method='lm',se=FALSE,size=2)+
+    facet_wrap(~ continent) + 
+  scale_color_lancet(name="Continent")
+```
+
+In short, the model finds the best (least squares) fit line for each subplot separately.
+
+**How do we interpret the model coefficients?**
+
+- The `Intercept` and `fertility` coefficients still refer to the reference level (first alphabetically), which is `Africa` in this case. Thus, for countries in Africa, the model says that the expected life expectancy is given by 
+```
+72.4191085 - 2.2970613 * fertility
+```  
+
+- As in `modTwo` (without the interaction term), the `continent` coefficients (e.g., `continentAmericas`) describe the location of the intercept for the model lines associated with the other continents, **relative to the reference continent Africa**.  
+- The slope for each model line is also found by adjusting the slope for the Africa model line, this time by the interaction term coefficients. For example, the slope of the Americas model line is equal to -2.2970613 - 1.2680688.   
+- More formally, we can interpret the `fertility:continentAmericas` coefficient of -1.2680688 as, "on average, each additional increase of 1 in the fertility rate is associated with an additional 1.2680688 year decrease in the Americas than it is in Africa."   
+- The model line for the Americas is given by:
+```
+(72.4191085 + 10.2540509) + (-2.2970613 - 1.2680688) * fertility
+```
+
+\
+
+# Practice: Mercury Concentration in Fish
+
+Source: [Craig Stowe, Nicholas School of the Environment, Duke University, circa 1990s](https://stat.duke.edu/datasets/mercury-in-bass). Here is the data description:
+
+*Rivers in North Carolina contain small concentrations of mercury which can accumulate in fish over their lifetimes. Since mercury cannot be excreted from the body, it builds up in the tissues of the fish. The concentration of mercury in fish tissue can be obtained at considerable expense by catching fish and sending samples to a lab for analysis. Directly measuring the mercury concentration in the water is impossible since it is almost always below detectable limits. A study was conducted in the Waccamaw and Lumber rivers to investigate mercury levels in tissues of large mouth bass. At several stations along each river, a group of fish were caught, weighed, and measured. In addition, a filet from each fish caught was sent to the lab so that the tissue concentration of mercury could be determined for each fish. Every row in the file `Mercury.csv` corresponds to a single fish. The recorded information for each fish is:*
+
+- **River**: Lumber or Waccamaw
+- **Station**: A station number (0, 1, ... , 15)
+- **Length**: (in centimeters)
+- **Weight**: (in grams)
+- **Concen**: Mercury concentration (in parts per million or ppm)
+
+Let's load the data set:
+```{r}
+mercury<-read_csv("http://faculty.olin.edu/dshuman/DS/Mercury.csv")
+mercury$Station<-factor(mercury$Station)
+```
+
+\
+
+```{exercise, name="Examine the distribution of mercury concentrations in all fish"}
+   
+a. Make a boxplot of the `Concen` variable. Does it show any signs of skewness, and if so, which type? You might also want to look at the density plot of `Concen`.    
+
+b. Find the mean and median concentration in these 171 fish. Does a comparison of the mean and median indicate skewness. Briefly explain.   
+
+c. Find the variance and standard deviation of the concentrations. Why do we define standard deviation when we have already defined variance?
+
+```
+```{r}
+ggplot(mercury,aes(x=Concen))+
+  geom_boxplot()
+ggplot(mercury, aes(x=Concen))+
+  geom_bar()
+```
+a) the boxplot appears to be skewing to the lower end of concentrations, surrounding the 1 ppm. We can also see this in the density plot. There are significantly more clusters of values directly under the 1's value on the x-axis for concentration, and the count of concentrations directly above 1 is higher than most. 
+b) Mean definitely confirms the skewness, as the value 1.19 aligns with what I said in part a. Median also confirms this. 
+```{R}
+mean(mercury$Concen)
+median(mercury$Concen)
+```
+c) Standard deviation measures how far values in a dataset are from each other, whereas variance more so measures how much the data varies from the mean. 
+```{r}
+var(mercury$Concen)
+sd(mercury$Concen)
+```
+\
+
+```{exercise, name="Use a fish's weight or length to explain its mercury concentration"}
+   
+a. Using the `lm` function, fit a model for `Concen` that uses no explanatory variables, save your model as `mod0`, and report the coefficient from this model. Generally, what will the coefficient from such a model represent?   
+  b. Use the code `residuals<-resid(mod0)` to make a new variable called `residuals` that contains all of the 171 residuals from the model you fit for `Concen` in (a). Find the sum of squared residuals using the command `sum(residuals^2)`. Also compute the variance of the residuals. How does it compare to the variance of the response variable `Concen`?   
+c. Suppose we are interested in determining how mercury concentration changes as the weight of a fish changes, or as its length changes. Make scatterplots to describe these two relationships. For which explanatory variable (`Weight` or `Length`) is the relationship stronger?   
+  d. Fit a model for `Concen` that uses `Length` as an explanatory variable and report the intercept and slope of the line of best fit.    
+e. Repeat with `Weight` in place of `Length`.   
+f. Find the sum of squared residuals for the two models in (d) and (e). Does a comparison of the sum of squared residuals agree with your answer to part (c)?    
+  g. According to this model, what is the mercury concentration, on average, of a fish whose length is 50 centimeters? 
+
+```
+(Some of my answers are in the comments of the code blocks )
+```{r}
+# a)
+mod0 <- lm(Concen ~ 1, data=mercury) # COEFFICIENT IS 1.191754
+
+# b)
+residuals <- resid(mod0)
+sum(residuals^2)
+var(residuals) # VARIANCE OF RESIDUALS IS THE SAME AS VAR(concen)!!
+
+# c)
+ggplot(mercury, aes(x=Weight, y = Concen))+
+  geom_point()
+ggplot(mercury, aes(x=Length, y = Concen))+
+  geom_point() # RELATIONSHIP STRONGER WITH LENGTH AS EXPLANATORY VARIABLE
+
+# d)
+mod_len <- lm(Concen ~ 1 + Length, data=mercury)
+mod_len$coefficients # intercept: -1.13164542, length/slope: 0.05812749
+
+# e)
+mod_weight <- lm(Concen ~ 1 + Weight, data=mercury)
+mod_weight$coefficients # intercept: 0.638612524, weight/slope: 0.0004818078
+
+# f)
+residuals_len <- resid(mod_len)
+sum(residuals_len^2) # sum: 56.95447
+residuals_weight <- resid(mod_weight)
+sum(residuals_weight^2) # sum: 68.37122
+# These values compared aligns with what part c showed us, since the residuals of weight is higher than that of length. This shows that the weight data relationship deviates more than the length data.
+
+# g) 
+mod_len$coefficients[1]+mod_len$coefficients[2]*50
+```
+
+\
+
+```{exercise, name="Mercury concentrations by river"}
+   
+a. Make side-by-side boxplots of the concentrations by river. Does it seem like `River` is a good explanatory variable for modeling `Concen`? Briefly explain.   
+b. Use `lm` to fit the model `Concen` ~ 1 + `River`.   
+c. Interpret the model coefficients.   
+d. Use your model coefficients to compute the mean mercury concentration of the fish sampled from each river.    
+
+```
+```{r}
+# a)
+ggplot(mercury, aes(x=Concen))+
+  geom_boxplot() +
+  facet_wrap(~River) # rivers doesn't necessarily seem like a good explanatory variable since comparing the rivers side by side, it appears that they are quite similar. 
+
+# b)
+mod_riv <- lm(Concen ~ 1 + River, data=mercury)
+mod_riv$coefficients
+
+# c) The intercept is at 1, indicating the response var Concen , while the slope is positive, but small (0.19...). This indicates that there isn't necessarily a strong relationship between the two. 
+
+# d) 
+mod_riv$coefficients[1] + mod_riv$coefficients[2]
+```
+
+\
+
+```{exercise, name="Multiple explanatory variables"}
+Now let's consider both `Station` and `Length` as explanatory variables for `Concen`.
+   
+\noindent a. Examine the data. Are certain stations located at certain rivers?   
+b. Redo the scatter plot of `Concen` vs. `Length` from above, except facet it by station number. You may also want to add different colors for different stations.   
+c. Fit the model `Concen` ~ 1 + `Length` + `Station`.   
+d. Interpret the `Station8` coefficient in your model (it should be equal to 0.31688).   
+e. According to this model, what is the mercury concentration, on average, of a fish of length 50 cm collected at station 8? How does that compare to the answer above for the model that only considered the length of the fish?   
+f. Try adding a `+geom_smooth(method="lm",se=FALSE)` to your faceted scatter plot. Do the best fit lines correspond to the model we generated in this exercise? Explain your answer. 
+
+```
+```{r}
+# a)
+# Yes, stations 0-6 belong to Lumber River while stations 7-15 are from Waccamaw river.
+
+# b)
+ggplot(mercury, aes(x=Length, y=Concen))+
+  geom_point(aes(color=Station))+
+  facet_wrap(~ Station)
+
+# c)
+mod_len_stat <- lm(Concen ~ 1 + Length + Station, data=mercury) # y intercept changes to fit the covariate more, but the slope is not changed (parallel lines)
+mod_len_stat$coefficients
+
+# d) Station8's coeff indicates a positive slope/relationship, where for station 8, as length increases by 1 unit, the concentration increases by 0.31...
+
+# e)
+(+mod_len_stat$coefficients[2]*50) + mod_len_stat$coefficients[1] + mod_len_stat$coefficients[10] # 1.551167 ppm
+
+# f) IS THIS CORRECT? 
+ggplot(mercury, aes(x=Length, y=Concen))+
+  geom_point(aes(color=Station))+
+  facet_wrap(~ Station)+
+  geom_smooth(method="lm", se=FALSE) # these lines do not correspond since this model does not change the slope, but only the y intercept. 
+```
+
+
+\
+
+```{exercise,name="Add an interaction effect"}
+Finally, we'll consider a model with both `Station` and `Length` as explanatory variables for `Concen`, and with an interaction term between the two explanatory variables:
+
+```
+
+```{r}
+modI<-lm(Concen~Station*Length,data=mercury)
+summary(modI)
+```
+\
+
+\noindent a. Do the best fit lines from the faceted plot you made in the previous exercise correspond to the model we generated in this exercise? Explain your answer. 
+yes! This model includes an interaction term that allows for variation in the slope depending on the covariate. In the visualization, we can see the slope and intercept varies amongst the subplots.
+
+\noindent b. TRUE or FALSE? This model assumes that the effect of `Length` on `Concen` does not depend on the `Station`.   
+FALSE bc this model is using an interaction term that takes into account how separating by station will vary the relationship between length and concentration. If we didn't have this distinction, then the data would look the same if we didn't model it as a linear model with multiple explanatory variables and an interaction term. Station modifies the relationship between the two. 
+
+\noindent c. The unit of the `Length` coefficient (0.0834664) is which of the following:   
+
+i. cm    
+ii. ppm  
+iii. cm/ppm   
+iv. ppm/cm (THIS ONE)
+v. (cm/ppm)^2   
+vi. (ppm/cm)^2    
+
+\noindent d. TRUE or FALSE? The average mercury concentration of all fish at Station 13 is 4.4398602-2.7947064=1.645154 ppm.  
+FALSE bc with our models, all we can do is predict. If we wanted to find the average concentration, we could go through the dataset, filter, and calculate it without the use of a model. This question is calculating the y-intercept for the model at Station 13, which is not the average concentration. 
+
+\noindent e. Which of the following is the correct interpretation of the `Station8` coefficient (1.8911)?
+is the y intercept of the model for station 8, the concentration 
+average concentration of station 8 when all stations and lengths are 0
+
+i. On average, fish at Station8 have 1.8911 ppm more mercury concentration than fish at Station0.   
+ii. For every extra centimeter, the mercury concentration of a fish at Station8 is 1.8911 ppm higher, on average. 
+iii. When controlling for the length of the fish, fish at Station8 have 1.8911 ppm more mercury concentration, on average, than fish at Station0.   
+iv. The median mercury concentration of all fish at Station8 is 1.8911 ppm.  
+v. More than one of the above.
+vi. None of the above. (THIS)
+
+\noindent f. Which of the following is the correct interpretation of the `Station8:Length` coefficient (-0.0357)?
+is the added slope for station8 from the shared slope
+i. On average, the mercury concentration in fish at Station 8 are 0.0357 ppm less than the concentrations in fish at Station 0.    
+ii. On average, the difference between the mercury concentrations of a fish at Station 8 and a fish of the same length at Station 0 is 0.0357 times the length of the two fish.   
+iii. On average, an extra centimeter of length is associated with 0.0357 ppm more concentration in a fish at Station 0 than it is for a fish at Station 8.  (THIS) 
+iv. On average, each extra centimeter of length in a fish at Station 8 is associated with 0.0357 ppm less mercury concentration.    (THIS)
+v. More than one of the above.   (THIS)
+vi. None of the above. 
+
+\noindent g. According to this model, what is the mercury concentration, on average, of a fish of length 50 cm collected at station 8? Compute this by hand and with `R`. How does your answer compare to the two answers above for (i) the model that only considered the length of the fish, and (ii) the model that considered both length and station, but did not include an interaction term? 
+```{r}
+# i) 
+modI$coefficients
+(modI$coefficients[17]+modI$coefficients[25])*50 + modI$coefficients[1]+modI$coefficients[9]
+# According to the model, there is approximately 1.48 ppm of mercury in a fish of length 50cm from station 8. 
+
+# ii) 
+mod_noI <- lm(Concen ~ 1 + Length + Station, data=mercury) # no interaction term 
+mod_noI$coefficients
+mod_noI$coefficients[1]+mod_noI$coefficients[10] + mod_noI$coefficients[2]*50
+# According to the model, there is approximately 1.55 ppm of mercury in a fish of length 50cm from station 8. 
+```
+\
+
+
+```{exercise}
+In the data description, it said that obtaining mercury concentration in fish tissue by sending samples to a lab is expensive, yet, this study did just that. Of course, other aspects associated with each of the fish were also measured (i.e. `River`, `Length`, `Weight`, and `Station`). Can you think of a way in which, as a result of the data collected in this study, money and time could be saved in subsequent work?
+
+For those who were interested in the length and weight of fishes associated with rivers, this dataset can be very useful for that as it contains all this information. 
+```  

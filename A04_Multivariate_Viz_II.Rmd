@@ -1,0 +1,435 @@
+---
+title: "| Data Science With an Eye Towards Sustainability    \n| Activity A4: Multivariate Visualization II\n"
+author: "Madie Tong"
+output:
+  bookdown::html_document2:
+    split_by: none
+    toc: yes
+    toc_depth: 1
+
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(gplots)
+library(DT)
+knitr::opts_chunk$set(tidy = FALSE, message=FALSE)
+```
+
+# Olin's Natural Gas Consumption
+
+In this activity, we'll practice using visualizations to explore relationships between multiple variables. We'll examine Olin's natural gas consumption data (July 2012 - November 2022) and resulting bills (January 2017 - November 2022). Here is some information about the data:
+
+- This data only covers Olin's commercial gas contracts, which supply the natural gas for the Central Heating Plant, Large Projects Building (LPB), Milas Hall, Miller Academic Center, Campus Center,  West Hall, and East Hall; the natural gas service for the [five smaller houses on campus](https://franklyspeakingnews.com/2012/11/whats-in-the-olin-houses/) is through residential contracts, and these bills are much smaller and excluded from this data set.
+
+- The monthly consumption is reported separately for each of the buildings. However, the Central Heating Plant supplies heat to the whole campus, except for the LPB. Thus, the natural gas for the other buildings is primarily used for other purposes, like heating potable water (e.g., to drink or shower) and powering gas stoves.
+
+- For each building, the total costs are broken out into two categories: supply and delivery. Delivery is for Olin's contract with Eversource, the company that delivers natural gas through the pipelines to Olin. It includes a (small) fixed cost each month and then a variable cost that is some rate times the number of therms consumed. Supply is for the actual natural gas consumed. Olin periodically changes its supplier to get the lowest rates possible. This portion of the bill is entirely variable cost (i.e., a monthly rate ($/therm) times the number of therms consumed). The monthly rate does vary over time.
+
+- Olin consumes 275,000-315,000 therms per year and incurs total natural gas costs of $250,000-$300,000 per year.
+
+We'll start by loading the data:
+```{r}
+gas_usage<-read_csv("http://faculty.olin.edu/dshuman/DS/olin_natural_gas_usage.csv",col_type=list(building = readr::col_factor()))
+```
+
+Here is the monthly natural gas consumption history by building:
+```{r,echo=FALSE,fig.width=14}
+DT::datatable(gas_usage, options = list(pageLength = 12))
+```
+
+\
+
+```{exercise,name="Units of observation"}
+What does each row correspond to in the data table?
+
+```
+Each row corresponds to a different building's therm consumption for the year and month. 
+
+\
+
+# Consumption Trends Over Time By Building
+
+Let's start with a line plot of each building's monthly natural gas consumption history:
+
+```{r,fig.width=12,fig.height=10}
+ggplot(gas_usage,aes(x=date,y=therms,color=building))+
+  geom_point()+ # adds points?
+  geom_line()+ #line graph?
+  facet_grid(rows=vars(building),scales="free")+ 
+  theme(legend.position = "none")+
+  ggtitle("Olin's Monthly Natural Gas Consumption by Building")+
+  labs(x=element_blank()) # what is?
+```
+
+\
+
+```{exercise, name="Careful interpretation of a graphic"}
+   
+a. Examine the code used to generate this plot to make sure you understand each line.   
+b. Make two observations about the plot.   
+c. Write down two questions about the patterns you see that you would like to ask Claire Rodgers, Olin's amazing Associate Director of Sustainability and Building Operations who collects and is familiar with this data.   
+```
+b) There seems to be quite a significant spike in therms during the year 2019 in both West Hall and academic center at approximately the same time. The LPB, on the other hand, seems to have a consistent pattern of increasing and decreasing therms around the winter months. 
+c) What happened in 2019 for West Hall? why don't we see it anywhere else? 
+
+\
+
+```{exercise,name="Side-by-side density plots"}
+In the plot above, the y-axis scales are different for each building. This helps our ability to see the increases and decreases in consumption for each building, but makes it harder to get a relative sense of the scale of consumption across buildings. Make a side-by-side density plot that shows the distributions of monthly natural gas consumptions for each building. Specifically, let your x-axis be the number of therms and there should be one density plot per building that includes all of that building's monthly natural gas consumptions in the given data. To make it easier to compare, you may want to facet by `building`, as done in the previous plot. What is the main takeaway from this plot?
+
+```
+```{r}
+ggplot(gas_usage, aes(x=therms, color=building)) + 
+  geom_density() + 
+  facet_grid(rows=vars(building), scales="free")+
+  ggtitle("Olin's Monthly Natural Gas Consumption by Density")+
+  theme(legend.position="none")
+```
+\
+
+```{exercise, name="Portion of total consumption by building"}
+Next, we want to answer the question, "How does the breakdown of natural gas consumption across the buildings change through the course of the year?"
+
+a. Write code to replicate one of the following two plots as closely as possible.   
+b. Use your plot to answer the question.
+
+```
+
+![](http://faculty.olin.edu/dshuman/DS/building_breakdown1.png)
+
+![](http://faculty.olin.edu/dshuman/DS/building_breakdown2.png)
+```{r}
+gas_usage$month <- factor(gas_usage$month, levels=month.abb) #factor() ordering the varaibles, levels is telling it how to order (knows month abb order)
+ggplot(gas_usage, aes(x=year, y=therms, fill=building))+
+  geom_bar(stat="identity", position="fill")+
+  labs(y="Portion of ", fill="building")+
+  facet_wrap(~month)
+```
+b) We can see from the plots that the gas consumption increases drastically during the summer months in the buildings themselves, while it reaches a low in the year during the winter months and increases for the central heating plant instead. 
+\
+
+```{exercise, name="Year-over-year trends"}
+Now we want to answer the question, "For each building, how does the year-over-year natural gas consumption trend look for each month?" For example, in West Hall, how does the October 2017 consumption compare to October 2018, October 2019, etc.?
+
+a. Write code to replicate the following plot as closely as possible.   
+b. Make two observations about the plot.   
+c. Write down two follow-up questions about the patterns you see.
+
+```
+
+![](http://faculty.olin.edu/dshuman/DS/gas_by_building.png)
+a) 
+```{r, fig.width=10}
+ggplot(gas_usage, aes(x=year, y=therms, color=building, fill=building))+
+  geom_col(stat="identity", color="white", size=0.2)+
+  facet_grid(rows=vars(building), cols=vars(month), scales="free")+
+  theme(legend.position="none")+
+  labs(y="Natural Gas Consumption (therms)")+
+  ggtitle("Natural Gas Consumption by Month and Building July 2012-November 2022")
+```
+b) During the summer months, the LPB has a significantly low, if not nonexistent, gas consumption, as does West Hall. In West Hall, there was a year in January where the natural gas consumption was significantly increased compared to other years. 
+
+c) What are the reasons for stray increased gas consumption during months/year where it typically isn't? Why does the Campus Center use so much heat during the summer? 
+\
+
+
+# Campuswide Consumption Trends Over Time
+
+Next we'll examine natural gas consumption trends, aggregated across all of the buildings. Let's load the data and examine it:
+
+```{r}
+gas_usage_totals<-read_csv("http://faculty.olin.edu/dshuman/DS/olin_natural_gas_usage_totals.csv",col_type=list(year=readr::col_factor()))
+```
+
+```{r,echo=FALSE,fig.width=14}
+DT::datatable(gas_usage_totals, options = list(pageLength = 12))
+```
+
+\
+
+```{exercise,name="New units of observation"}
+What does each row correspond to in the data table?
+
+```
+Each row in the data table corresponds to a specific year and month's gas consumption.
+
+\
+
+
+```{exercise,name="Interpretation practice"}
+Examine the following four plots.   
+
+a. Compare Plot A and Plot B. What are their similarities and differences? Are there stories that are easier to takeaway from one or the other? 
+
+b. Compare Plot C and Plot D. What are their similarities and differences? Are there stories that are easier to takeaway from one or the other?
+  
+c. Compare Plot B and Plot D. What are their similarities and differences? Are there stories that are easier to takeaway from one or the other?
+  
+d. If you could use just one of these plots to show both seasonal trends and year-over-year trends, which would you pick?
+  
+```
+a) Both Plot a and b are similar in that they both display the same information, the campus-wide consumption per month and year. However, they differ in the visualization. Plot A is easier to interpet with the line graph since it shows the trends through ups and downs, whereas plot B uses bar graphs of different colors that aren't necessarily sorted in an easy to interpret way. 
+
+b) Plot c and d are similar in that they both separate the data by different colored months, and display the same information about campuswide gas consumption through the years. The differences, similar to with A/B, are that the information is displayed different. Were plot C uses a line graph, which is not very intuitively conveyed since the separation is hard to interpret, plot D separates the months into bar graphs by year, which groups the information properly together and makes it easy to see trends. 
+
+c) Plot b and d are similar in that they both are types of bar graphs. However, the coloring of the bars are different; B colors bars based on year and D coors bars based on months. Between the two, plot d are is easier to interpet because the colors are grouped together and makes it easier to see trends. 
+
+d) I would use plot A to convey year-to-year and seasonal trends since the formatting is most intuitive (only if the months were in order on the graph, which im assuming it was meant to be). With the months as the x-axis, the line graphs flow to convey trends over the course of the year, and plots all the years on top of each other to directly compare how each year has changed with each other. 
+
+```{r,fig.width=16}
+# Plot A
+ggplot(gas_usage_totals,aes(x=month,y=total_therms,color=year,group=year))+
+  geom_point()+
+  geom_line()+
+   labs(y="Campuswide Natural Gas Consumption (therms)",x="Month")
+```
+
+```{r,fig.width=16}
+# Plot B
+ggplot(gas_usage_totals,aes(x=month,y=total_therms,fill=year))+
+  geom_col(position="dodge")+
+   labs(y="Campuswide Natural Gas Consumption (therms)",x="Month")
+```
+
+```{r,fig.width=16}
+# Plot C
+ggplot(gas_usage_totals,aes(x=year,y=total_therms,color=month,group=month))+
+  geom_point()+
+  geom_line()+
+   labs(y="Campuswide Natural Gas Consumption (therms)",x="Year")
+```
+
+```{r,fig.width=16}
+# Plot D
+ggplot(gas_usage_totals,aes(x=year,y=total_therms,fill=month))+
+  geom_col(position="dodge")+
+  facet_grid(~month)+
+  scale_x_discrete(breaks=seq(2012,2022,by=2))+
+  labs(y="Campuswide Natural Gas Consumption (therms)",x="Year")+
+  theme(legend.position = "none",axis.text.x=element_text(angle=45))
+```
+
+\
+
+
+# Olin's Natural Gas Cost Trends
+
+Now we'll examine data on the actual costs associated with the natural gas consumption we've explored above. Let's load two versions of the data. In the first version, the costs are separated out by building:
+
+```{r}
+gas_costs<-read_csv("http://faculty.olin.edu/dshuman/DS/olin_natural_gas_spending.csv",col_type=list(building = readr::col_factor()))
+```
+
+```{r,echo=FALSE,fig.width=14}
+gas_costs_rounded <- gas_costs %>% mutate_if(is.numeric, round, 3)
+DT::datatable(gas_costs_rounded, options = list(pageLength = 12))
+```
+
+\
+
+In the second version, they are aggregated across all buildings:
+
+```{r}
+campus_gas_costs<-read_csv("http://faculty.olin.edu/dshuman/DS/olin_natural_gas_spending_totals.csv")
+```
+
+
+```{r,echo=FALSE,fig.width=14}
+campus_gas_costs_rounded <- campus_gas_costs %>% mutate_if(is.numeric, round, 3)
+DT::datatable(campus_gas_costs_rounded, options = list(pageLength = 12))
+```
+
+\
+
+```{exercise,name="Units of observation"}
+What does each row correspond to in the two data tables?
+
+```
+The first data table shows the costs per building of a certain day, year, and month in a single row. the second data table shows the same information, but abstracts away buildings. In other words, it compiles the costs of the building into one value versus differentiating the cost of each. 
+\
+
+```{exercise,name="Optional exercise: Total natural gas cost by building and month"}
+This exercise is optional. Make a plot identical to the one in Exercise 2.4, except with total cost in dollars on the y-axis instead of consumption in therms. What are you main takeaways?
+
+```
+
+
+\
+
+```{exercise, name="Simple line plot practice"}
+Make two separate plots, each with a single line (with overlaying points):
+a. Olin's total monthly cost for natural gas over time (one point per month).
+b. The average cost per therm over time (one point per month).
+
+```
+a) 
+```{r}
+# campus_gas_costs$month <- factor(campus_gas_costs$month, levels=month.abb)
+ggplot(campus_gas_costs, aes(x=date, y=total_cost))+
+  geom_point()+
+  geom_line()+
+  labs(x="Time (month)", y="Total Cost for Natural Gas")+
+  ggtitle("Olin's Total Monthly Cost for Natural Gas over Time")
+```
+b) 
+```{r}
+# avg cost per therm over time 1 pt per month
+ggplot(campus_gas_costs_rounded, aes(x=date, y=total_cost_per_therm))+
+  geom_point() +
+  geom_line() + 
+  labs(x="Time (month)", y="Total Cost per Therm")+
+  ggtitle("Olin's Average Cost per Therm over Time")
+
+```
+\
+
+
+```{exercise,name="More interpretation practice"}
+Examine the two graphs below and use them to answer the following questions.
+
+a. Does cost per therm fluctuate more in the summer or winter? Any idea why?
+
+b. Pick a month. Looking over the five years or so of data, what is the rough difference in savings for that month between the year when Olin spent the most on natural gas and the least on natural gas? Is that a meaningful difference?
+  
+```
+a) cost per therm fluctuates more in the summer. This could potentially be due to unpredictable temperature fluctuations during the summer months in which heating may be used randomly. 
+b) Looking at the month August, in the year 2022 a little over 10000\$ was spent compared to the year 2020 where approximately 100-200\$ was spent. This is a significant number, as it is a large enough difference to be concerning since the most recent year is the spike. 
+
+```{r,fig.width=16}
+ggplot(campus_gas_costs,aes(x=year,y=total_cost,fill=month))+
+  geom_col(position="dodge")+
+  facet_grid(~month)+
+  labs(y="Campuswide Monthly Total Cost for Natural Gas ($)",x="Year")+
+  theme(legend.position = "none",axis.text.x=element_text(angle=45))
+```
+
+```{r,fig.width=16}
+ggplot(campus_gas_costs,aes(x=year,y=total_cost_per_therm,fill=month))+
+  geom_col()+
+  facet_grid(~month)+
+  labs(y="Average Total Cost Per Therm ($)",x="Year")+
+  theme(legend.position = "none",axis.text.x=element_text(angle=45))
+```
+
+
+
+\
+
+# Heat Maps to Visualize Multiple Variables
+
+There are multiple ways in `R` to generate ***heat maps*** to examine multiple variables. We'll examine a few here.
+
+## geom_tile()
+
+We can use the `geom_tile()` layer in the `ggplot2` package to make a heat map, as follows:
+
+```{r,fig.width=12}
+campus_gas_costs2<-filter(campus_gas_costs,year>2012,year<2022)
+ggplot(campus_gas_costs2,aes(x=month,y=year,fill=total_therms))+
+  geom_tile()+
+  ggtitle("Olin's Total Monthly Natural Gas Consumption")
+```
+
+\
+
+And there are many color scheme options via `scale_fill_gradient`, `scale_fill_brewer`, `scale_fill_distiller`, etc.:
+
+```{r,fig.width=12}
+ggplot(campus_gas_costs2,aes(x=month,y=year,fill=total_therms))+
+  geom_tile()+
+  ggtitle("Olin's Total Monthly Natural Gas Consumption")+
+  scale_fill_gradient(low="white", high="blue") 
+```
+    
+    
+## heatmap.2
+
+The function `heatmap.2` in the `gplots` package makes similar plots, but the starting table structure should be a data frame instead of the Tidyverse's tibble and it should already look like the matrix you want to show:
+
+```{r,echo=FALSE,cache=TRUE}
+campus_gas_costs3<-campus_gas_costs2%>%
+  ungroup()%>%
+  select(month,year,total_therms)%>%
+  pivot_wider(names_from=month,values_from=total_therms)
+```
+
+```{r}
+campus_gas_costs3
+```
+```{r}
+campus_gas_costs3<-as.data.frame(campus_gas_costs3) # convert from tibble to data frame
+row.names(campus_gas_costs3)<-campus_gas_costs3$year
+campus_gas_costs3<-campus_gas_costs3[,2:13]
+campus_gas_mat <- data.matrix(campus_gas_costs3)
+```
+
+```{r,fig.width=16, fig.height=12, cache=TRUE}
+heatmap.2(campus_gas_mat, Rowv=NA, Colv=NA, scale="column",
+          col=heat.colors(256),margins=c(10,20),
+          colsep=c(1:12),rowsep=(1:9), sepwidth=c(0.05,0.05),
+          sepcolor="white",cexRow=3,cexCol=3,trace="none",
+          dendrogram="none")
+```          
+
+And we can also change the color scheme:
+
+```{r,fig.width=16, fig.height=12, cache=TRUE}
+heatmap.2(campus_gas_mat, Rowv=NA, Colv=NA, scale="column",
+          col="bluered",margins=c(10,20),
+          colsep=c(1:12),rowsep=(1:9), sepwidth=c(0.05,0.05),
+          sepcolor="white",cexRow=3,cexCol=3,trace="none",
+          dendrogram="none")
+```          
+
+
+
+**Heat map with row clusters** 
+
+It can be tough to identify interesting patterns by visually comparing across rows and columns.  Including *dendrograms* helps to identify interesting clusters.
+
+```{r, fig.width=16, fig.height=12, cache=TRUE}
+heatmap.2(campus_gas_mat, Colv=NA, scale="column",
+          col="bluered",margins=c(10,20),
+          colsep=c(1:12),rowsep=(1:9), sepwidth=c(0.05,0.05),
+          sepcolor="white",cexRow=3,cexCol=3,trace="none",
+          dendrogram="row")
+```  
+
+**Heat map with column clusters** 
+
+We can also construct a heat map which identifies interesting clusters of columns (variables).
+
+```{r, fig.width=16, fig.height=12, cache=TRUE}
+heatmap.2(campus_gas_mat, Rowv=NA,  scale="column",
+          col="bluered",margins=c(10,20),
+          colsep=c(1:12),rowsep=(1:9), sepwidth=c(0.05,0.05),
+          sepcolor="white",cexRow=3,cexCol=3,trace="none",
+          dendrogram="column")
+```   
+
+
+## Other Options
+
+- The package `heatmap3` makes heat maps in a similar way to the `heatmap.2` function above
+
+- You can also look into [star plots](https://www.math.ucla.edu/~anderson/rw1001/library/base/html/stars.html) via the `stars` function
+
+\
+
+
+# Explore
+
+```{exercise, name="Additional exploration"}
+a. Write down one additional research question you think can be answered with this data.   
+b. Make a visualization to explore that question. 
+
+```
+a) One potential research question to explore with this data set is how therm costs correlate to the buildings, and whether or not there is a connection to the cost based off building size and other factors. 
+b) 
+```{r}
+# campus_gas_costs2<-filter(campus_gas_costs,year>2012,year<2022)
+ggplot(gas_costs_rounded,aes(x=month,y=building,fill=total_cost))+
+  geom_tile()+
+  ggtitle("Olin's Total Therm Cost by month and building")
+```

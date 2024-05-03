@@ -1,0 +1,351 @@
+---
+title: "| Introduction to Data Science    \n| Activity A3b: Multivariate Visualization I\n"
+author: Madie Tong 
+output:
+  bookdown::html_document2:
+    split_by: none
+    toc: yes
+    toc_depth: 1
+
+---
+
+```{r setup,include=FALSE}
+knitr::opts_chunk$set(tidy = FALSE, message=FALSE,warning=FALSE)
+library(tidyverse)
+```
+
+
+# Background on Visualizing Relationships
+
+In making visualizations - and subsequently, statistical models - we are typically interested in the relationship between:    
+
+- **<span style="color:red">a response variable</span>**: the variable whose variability we would like to explain     
+- **<span style="color:red">predictors</span>**:  variables that might explain some of the variability in the response 
+
+Our goal is to construct visualizations that allow us to examine/identify the following features of the relationships among these variables:    
+
+- relationship *trends*    
+- relationship *strength* (degree of variability from the trend)    
+- *outliers* in the relationship
+
+Before constructing visualizations of the relationship among any set of these variables, we need to understand what features these should have.  As with univariate plots, the appropriate visualization also depends upon whether the variables are quantitative or categorical. Recall some **basic rules in constructing graphics:** 
+
+- Each **quantitative variable** requires a new axis.  (We'll discuss later what to do when we run out of axes!)    
+- Each **categorical variable** requires a new way to "group" the graphic (eg: using colors, shapes, separate facets, etc to capture the grouping)    
+- For visualizations in which **overlap** in glyphs or plots obscures the patterns, try faceting or transparency. 
+
+\
+
+# Data Overview: Energy Consumption Per Capita 
+
+Today, we'll use data from [Our World in Data](https://ourworldindata.org/energy-mix) on energy consumption per capita over time in different countries. Our World in Data pulls these data from Energy Institute - Statistical Review of World Energy (2023). The data are in kWh per capita for fossil fuels and in kWh equivalent per capita for the nuclear and renewables categories. One of the authors of this analysis, Hannah Ritchie, gave a [truly inspiring talk](https://www.youtube.com/watch?si=DZZXGQH_9Qugc5sT&v=Kl3VVrggKz4&feature=youtu.be) about using data science to characterize and take action towards sustainability. This is a fantastic use of simple visualizations to tell clear, not at all obvious stories.
+
+We'll use a subset of the data from the years 1991, 2001, 2011, and 2021. The following three data tables contain the same information in different forms (in a few weeks, we'll learn easy ways to go back and forth between these different forms starting from any one of them):
+```{r,cache=TRUE}
+energy_per_capita1<-read_csv("http://faculty.olin.edu/dshuman/DS/energy_per_capita1.csv",col_type=list(year = col_factor(),less_than_eighty_percent_fossil_fuels=col_logical()))
+energy_per_capita2<-read_csv("http://faculty.olin.edu/dshuman/DS/energy_per_capita2.csv",col_type=list(year = col_factor()))
+energy_per_capita3<-read_csv("http://faculty.olin.edu/dshuman/DS/energy_per_capita3.csv",col_type=list(year = col_factor()))
+```
+
+Here are the first eight rows of each table:
+```{r,echo=FALSE}
+knitr::kable(
+  energy_per_capita1[1:8,], caption = 'A subset of the energy_per_capita1 data table.'
+)
+```
+
+```{r,echo=FALSE}
+knitr::kable(
+  energy_per_capita2[1:8,], caption = 'A subset of the energy_per_capita2 data table.'
+)
+```
+
+```{r,echo=FALSE}
+knitr::kable(
+  energy_per_capita3[1:8,], caption = 'A subset of the energy_per_capita3 data table.'
+)
+```
+
+```{exercise, name="Explore the data"}
+1. What are the units of observation for each; i.e., what does one row correspond to in each of the three tables?
+  
+2. What are the dimensions of each of the three tables? 
+
+3. How many countries are included in the data set?
+  
+4. Are there data for all four of the selected years for each of the included countries? 
+  
+```
+1. country, code, year 
+2. 284x7 73x14, 852x5
+3. 71 countries
+```{r}
+unique(energy_per_capita1$country)
+```
+4. There are countries that do not have all four years, such as Oman, Kuwait, and Singapore. 
+```{r}
+# for x in energy_per_capita1$country:
+#   count()
+# count(energy_per_capita1$country."Slovenia")
+table(energy_per_capita1['country'])
+```
+\
+
+# Visualizing Quantitiative vs Quantitative Relationships
+
+Let's start by exploring the relationship between per capita fossil fuel energy consumption in 2001 (`fossil_fuels_2001`) and per capita fossil fuel energy consumption in 2021 (`fossil_fuels_2021`), both quantitative variables.    
+
+```{exercise name="Scatterplots and glyphs"}
+Both `fossil_fuels_2001` and `fossil_fuels_2021` are quantitative, thus require their own axes.  Traditionally, the response variable is placed on the y-axis.  Once the axes are set up, each case is represented by a "glyph" at the coordinates defined by these axes.    
+
+```
+
+a. Which of the three tables do we want to use to make this plot? To answer this question, we want to think of the "one row per glyph" guiding rule of glyph-ready data. 
+The second data set, energy_per_capita2, includes both necessary variables to make the visualization in mind. 
+
+b. Make a scatterplot of `fossil_fuels_2001` vs `fossil_fuels_2021` with point glyphs:    
+  
+    ```{r eval=FALSE}
+    # for all of these, you'll need to change the X in energy_per_capitaX to 1, 2, or 3
+    #just a graphics frame
+    ggplot(energy_per_capita2, aes(y=fossil_fuels_2021, x=fossil_fuels_2001))  # it doesn't matter whether you specify the y or x aesthetic first
+   
+    #add a layer with "point" glyphs
+    ggplot(energy_per_capita2, aes(y=fossil_fuels_2021, x=fossil_fuels_2001)) + 
+        geom_point()
+    
+    #add a layer with a diagonal line along y=x
+    ggplot(energy_per_capita2, aes(y=fossil_fuels_2021, x=fossil_fuels_2001)) + 
+        geom_point() +
+        geom_abline(linewidth=.3,linetype=3) 
+    ```    
+
+c. Summarize the relationship between fossil fuel energy consumption in 2001 and fossil fuel energy consumption in 2021. Be sure to comment on:    
+        - the strength of the relationship (weak/moderate/strong)    
+        - the direction of the relationship (positive/negative)    
+        - outliers: what countries deviate from the  trend?  
+        
+  The relationship between fossil fuel energy consumption in 2001 and 2021 is a positive correlation with a relatively moderate/strong relationship, as the points of the scatter plot closely follow the slope of the line. There are a few outliers, however, which are the singular points that are further away from the x=y line.  
+      
+        
+d. Which points on the plot correspond to countries decreasing their per capita fossil fuel use over the 20-year period? Which correspond to countries increasing their per capita fossil fuel use over the 20-year period?
+
+The points under the x=y line indicate that the country in 2021 had decreased their per capita fossil fuel since 2001. The countries who increased, on the other hand, can be found above the x=y line.
+
+e. It would be nice to know which countries these points correspond to! We can do that by replacing the points (`geom_point()`) with text labels (`geom_text()`):
+
+    ```{r eval=FALSE}
+    # Because we want the label to be different for each point, the `label=code` has to go inside of an `aes()`
+    ggplot(energy_per_capita2, aes(y=fossil_fuels_2021, x=fossil_fuels_2001)) + 
+        geom_text(aes(label=code)) + 
+        geom_abline(linewidth=.3,linetype=3) 
+    ```  
+
+\
+
+
+# Visualizing Quantitative vs. Categorical Relationships
+
+Next, we are going to focus just on 2021 and try to understand the distributions of energy consumption per capita (a quantitative variable) by energy source (a categorical variable). First, we need to create a new table with just the data from 2021:
+
+```{r}
+energy_per_capita_2021<-read_csv("http://faculty.olin.edu/dshuman/DS/energy_per_capita_2021.csv",col_type=list(year = col_factor()))
+```
+
+Next, we'll work through several plotting options. 
+
+```{exercise name="Side-by-Side Density Plots"}
+We'll show density plots for each state color next to each other. Your only task in this exercise is to activate the code chunks and understand how the different codes leads to different plots.
+  
+```
+
+a. Construct a density plot for each group.     
+    ```{r eval=FALSE}
+    ggplot(energy_per_capita_2021, aes(x=consumption_per_capita, fill=energy_source)) + 
+        geom_density()
+    ```    
+b.  Notice that `ggplot` randomly assigns colors to group based on alphabetical order.  We can change this to specific colors as follows:    
+    ```{r eval=FALSE}
+    ggplot(energy_per_capita_2021, aes(x=consumption_per_capita, fill=energy_source)) + 
+        geom_density() + 
+        scale_fill_manual(values=c("red","yellow","green"))
+    ```    
+c. The overlap between the groups makes it difficult to explore the features of each.  One option is to add *transparency* to the density plots:    
+    ```{r eval=FALSE}
+    ggplot(energy_per_capita_2021, aes(x=consumption_per_capita, fill=energy_source)) +
+      geom_density(alpha=.5) + 
+      scale_fill_manual(values=c("red","yellow","green"))
+    ```    
+d. Yet another option is to separate the density plots into separate "facets" defined by group:    
+    ```{r eval=FALSE}
+    ggplot(energy_per_capita_2021, aes(x=consumption_per_capita, fill=energy_source)) +
+      geom_density(alpha=.5) + 
+      scale_fill_manual(values=c("red","yellow","green"))+
+      facet_wrap(~energy_source)
+    ``` 
+
+```{exercise name="Side-by-Side Histograms"}
+Let's try a similar strategy using histograms to illustrate the relationship between `consumption_per_capita` and `energy_source`.    
+```
+
+a. Start with the default histogram:    
+    ```{r eval=FALSE}
+    ggplot(energy_per_capita_2021, aes(x=consumption_per_capita, fill=energy_source)) +  
+      geom_histogram(color="white") 
+    ```
+b. That's not very helpful!  Separate the histograms into separate facets for each `energy_source` group.    
+
+\
+
+**More Options**
+
+Density plots and histograms aren't the only type of viz we might use! We can construct side-by-side ***boxplots***, which are constructed from five numbers - the minimum, 25th percentile, median, 75th percentile, and maximum value of a quantitative variable:    
+    <img src="http://faculty.olin.edu/dshuman/DS/Box1.001.png" style="width: 400px"/>
+ 
+Here is an example:
+```{r,fig.width=8,fig.height=4}
+ggplot(energy_per_capita_2021, aes(y=consumption_per_capita, x=energy_source)) +  
+    geom_boxplot() 
+```
+
+Similarly, we can use ***violin plots***, which are basically density plots on their sides:
+
+```{r,fig.width=8,fig.height=4}
+ggplot(energy_per_capita_2021, aes(y=consumption_per_capita, x=energy_source)) + 
+    geom_violin() 
+```
+
+We can make these violin plots slightly fancier and more informative by overlaying them with the individual data points and adding some color:
+
+```{r,fig.width=10,fig.height=4}
+library(ggforce)
+ggplot(energy_per_capita_2021, aes(y=consumption_per_capita, x=energy_source,fill=energy_source,color=energy_source)) + 
+  scale_shape_identity() +
+  theme(legend.position="none",text=element_text(size=14),
+        axis.ticks.x=element_blank(),panel.grid.major.x = element_blank(), panel.grid.minor.x = element_blank(),
+             axis.text = element_text(size = 14)) + labs(x=element_blank(),y=element_blank(),title="2021 Energy Consumption Per Capita (kWh)",subtitle="Each dot represents one country. Horizontal lines represent the medians across countries")+
+  geom_sina(size = 2, 
+                alpha = 1, 
+                aes(shape = 16)) +
+  geom_violin(position = position_nudge(x = 0, y = 0),
+             adjust = 2,
+             draw_quantiles = c(0.5),
+             alpha = 0.3, 
+             trim = TRUE, 
+             scale = "width") +   
+  scale_fill_manual(values=c("red","yellow","green"))+
+scale_color_manual(values=c("red","yellow","green"))+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10))
+```
+
+\
+
+# Visualizing Categorical vs Categorical Relationships
+
+Let's explore the following research question: "How has the number of countries who consume less than 80% of their energy from fossil fuels changed from 1991 to 2021?"
+
+```{exercise name="Side-by-side bar plots"}
+We saw above that we can incorporate a new categorical variable into a visualization by using grouping features such as color or facets.      
+
+```
+
+a. Construct the following 4 bar plot visualizations.    
+    ```{r eval=FALSE}
+  #a stacked bar plot
+  ggplot(energy_per_capita1, aes(x=year, fill=less_than_eighty_percent_fossil_fuels))+
+    geom_bar()+
+    labs(y="Number of Countries",fill="Fossil Fuel Contribution Below 80%")
+  
+  #a side-by-side bar plot
+  ggplot(energy_per_capita1, aes(x=year, fill=less_than_eighty_percent_fossil_fuels)) + 
+      geom_bar(position="dodge")+
+      labs(y="Number of Countries",fill="Fossil Fuel Contribution Below 80%")
+  
+  #a proportional bar plot
+  ggplot(energy_per_capita1, aes(x=year, fill=less_than_eighty_percent_fossil_fuels)) + 
+      geom_bar(position="fill")+
+      labs(y="Portion of Reporting Countries",fill="Fossil Fuel Contribution Below 80%")   
+  
+  #faceted bar plot
+  ggplot(energy_per_capita1, aes(x=year, fill=less_than_eighty_percent_fossil_fuels)) +  
+      geom_bar() +
+      facet_wrap( ~less_than_eighty_percent_fossil_fuels)+
+      labs(y="Number of Countries",fill="Fossil Fuel Contribution Below 80%")
+    
+    ```    
+
+b. Name one pro and one con of using the "proportional bar plot" instead of one of the other three options.    
+PRO: Because of the scale of the y axis, it is easy to understand approximately the ratio of countries with fossil fuel contribution below 80%. 
+CON: With the scale of the y-axis changed, it is impossible to tell the exact number of countries, making it not as descriptive. 
+
+c. What's your favorite bar plot from part (a)?  Why?    
+I personally like the last plot, the faceted bar plot, since it is easy to tell when the false and true are split up which is clearly higher than the other. 
+
+\
+
+# Practice
+
+```{exercise, name="Computation practice"}
+a. In 2021, which country consumed the least energy from fossil fuels, per capita?   
+
+b. Which country in the data set reduced total fossil fuel energy consumption per capita by the greatest percentage from 2001 to 2021? How much did that country reduce it by?
+```
+a) The country that consumed the least energy from fossil fuels per capita in 2021 was Bangladesh.  
+```{r}
+energy_per_capita2[which.min(energy_per_capita2$fossil_fuels_2021),] # min finds the min in that column, which finds the idx, using idx (row,col) to retrieve country min
+```
+b) Denmark is the country that reduced total fossil fuel energy consumption per capita by the greatest percentage from 2001 to 2021 by 53%.
+```{r}
+# min(energy_per_capita2$fossil_fuels_1991)
+
+percent_data <- data_frame(
+  countries <- energy_per_capita2$country,
+  ff_capita_diff <- ((energy_per_capita2$fossil_fuels_2001 - energy_per_capita2$fossil_fuels_2021)/(energy_per_capita2$fossil_fuels_2001)) * 100
+)
+percent_data[order(-percent_data$`ff_capita_diff <- ...`),]
+
+```
+
+\
+
+```{exercise,name="Charting changes over time"}
+Finally, we are interested in two research questions:
+  1. Which countries are doing a good job of reducing their fossil fuel energy consumption?
+  2. To what extent are they doing this by increasing the portion of their energy consumption from nuclear and/or renewables?
+
+a. Examine the two plots below. Does the first plot help you answer either or both of the research questions above? How about the second plot?
+
+b. Recreate both plots as closely as possible. Hint: start by thinking about the glyphs, glyph-ready data, and which table you'll want to use.
+
+```
+\
+
+```{r,echo=FALSE, fig.margin=TRUE,out.width = '100%'}
+knitr::include_graphics("http://faculty.olin.edu/dshuman/DS/energy_decomp_totals.png")
+```
+
+\
+
+```{r,echo=FALSE, fig.margin=TRUE,out.width = '100%'}
+knitr::include_graphics("http://faculty.olin.edu/dshuman/DS/energy_decomp_portions.png")
+```
+a) Countries such as Ecuador, Saudi Arabia, and the US are doing a relatively good job of reducing their fossil fuel energy consumption as shown well by the second plot. It can be easily seen since with the use of colors and ratios, we can visually tell from the second plot that these three countries are either half or more than half not using fossil fuels as an energy source.  The first plot on the other hand, is very difficult to tell and compare since all countries are consuming a variable amount of energy per capita and that amount is reflected in the first plot. This makes it difficult to compare countries' progress side by side and additionally to tell how much energy is sourced from fossil fuels compared to the others. 
+b) 
+```{r}
+# plot 1 
+  ggplot(energy_per_capita3, aes(x=year, y=consumption_per_capita, fill=energy_source))+
+    geom_bar(stat="identity")+
+    labs(y="Energy Consumption per Capita (kWh)", fill="Energy Source") + 
+    scale_fill_manual(values=c("red","yellow","green"))+
+    scale_color_manual(values=c("red","yellow","green"))+
+    facet_wrap(~country)
+
+# plot 2 
+  ggplot(energy_per_capita3, aes(x=year, y=consumption_per_capita, fill=energy_source))+
+      geom_bar(stat="identity",position="fill")+
+      labs(y="Energy Consumption per Capita (kWh)", fill="Energy Source") +
+      scale_fill_manual(values=c("red","yellow","green"))+
+      scale_color_manual(values=c("red","yellow","green"))+
+      facet_wrap(~country)
+```
+sources I used to figure this out: <https://stackoverflow.com/questions/59648848/how-to-make-a-stacked-bar-chart-in-ggplot2> <https://www.reddit.com/r/RStudio/comments/s5c1ta/creating_a_stacked_proportional_barplot/> 
